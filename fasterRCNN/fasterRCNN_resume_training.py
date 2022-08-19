@@ -20,16 +20,16 @@ else:
 # for IMAGE_ROOT, specify full path to folder where all/only training images are located
 if local:
     IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
-    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects")
+    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
 else:
     IMAGE_ROOT = "/scratch/summit/burnsal@colostate.edu"
     os.chdir('/projects/burnsal@colostate.edu/CameraTrapDetectoR')
 
 # Import packages
-exec(open('./CameraTrapDetectoR/fasterRCNN/fasterRCNN_imports.py').read())
+exec(open('./fasterRCNN/fasterRCNN_imports.py').read())
 
 # Load model functions
-exec(open('./CameraTrapDetectoR/fasterRCNN/fasterRCNN_model_functions.py').read())
+exec(open('./fasterRCNN/fasterRCNN_model_functions.py').read())
 
 # set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -41,7 +41,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set pathways
 # Note: Manually change output_path and checkpoint_file to the training session being resumed and its latest checkpoint
-output_path = ".CameraTrapDetectoR_data/output/test/startdate_20220810_fasterRCNN_species_4bs_4gradaccumulation_9momentum_0005weight_decay_005lr/"
+output_path = "./output/test/startdate_20220810_fasterRCNN_species_4bs_4gradaccumulation_9momentum_0005weight_decay_005lr/"
 checkpoint_file = output_path + "checkpoint_" + "12epochs.pth.tar"
 # new path2weights depending on the day
 path2weights = output_path + "weights_" + model_type + time.strftime("_%Y%m%d") + ".pth"
