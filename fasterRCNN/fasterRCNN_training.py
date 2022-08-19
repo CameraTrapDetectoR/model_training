@@ -20,13 +20,13 @@ else:
 # for IMAGE_ROOT, specify full path to folder where all/only training images are located
 if local:
     IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
-    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects")
+    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
 else:
     IMAGE_ROOT = "/scratch/summit/burnsal@colostate.edu"
     os.chdir('/projects/burnsal@colostate.edu/CameraTrapDetectoR')
 
 # Import packages
-exec(open('./CameraTrapDetectoR/fasterRCNN/fasterRCNN_imports.py').read())
+exec(open('./fasterRCNN/fasterRCNN_imports.py').read())
 
 # set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -36,7 +36,7 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # Load model functions
-exec(open('./CameraTrapDetectoR/fasterRCNN/fasterRCNN_model_functions.py').read())
+exec(open('./fasterRCNN/fasterRCNN_model_functions.py').read())
 
 # Set model type
 # options: 'general', 'family', 'species', 'pig_only'
@@ -47,7 +47,7 @@ max_per_category, min_per_category = class_range(model_type)
 
 ## Load and format labels
 # Load label .csv file - check to confirm most recent version
-df = pd.read_csv("./CameraTrapDetectoR_data/labels/varified.bounding.boxes_for.training.final.2022-05-22.csv")
+df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-05-22.csv")
 
 df = wrangle_df(df, IMAGE_ROOT)
 
@@ -94,7 +94,7 @@ grad_accumulation = 4
 train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
 
 # make output directory and filepaths
-output_path = "./CameraTrapDetectoR_data/output/" + time.strftime("%Y%m%d_") + "fasterRCNN_" + model_type + "_" + \
+output_path = "./output/" + time.strftime("%Y%m%d_") + "fasterRCNN_" + model_type + "_" + \
               str(batch_size) + 'bs_' + str(grad_accumulation) + 'gradaccumulation_' + \
               str(momentum).replace('0.', '') + "momentum_" + str(weight_decay).replace('0.', '') + \
               "weight_decay_" + str(lr).replace('0.', '') + "lr/"
