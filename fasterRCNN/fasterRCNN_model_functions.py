@@ -490,6 +490,19 @@ def load_checkpoint(checkpoint_file):
     label2target = checkpoint['label2target']
     return model, optimizer, lr_scheduler, epoch, loss_history, best_loss, model_type, label2target
 
+# plot losses
+def plot_losses(model_type, loss_history):
+    # extract losses and number of epochs
+    train_loss = [loss.detach().numpy() for loss in loss_history['train']]
+    val_loss = [loss.cpu().numpy() for loss in loss_history['val']]
+    epochs = range(1, len(train_loss) + 1)
+    # format and plot
+    plt.plot(epochs, train_loss, 'bo', label='Train Loss')
+    plt.plot(epochs, val_loss, 'b', label='Val Loss')
+    plt.title(model_type + "Faster R-CNN Loss History")
+    plt.legend()
+    plt.figure()
+
 # make predictions
 def decode_output(output, labels_as_numbers = False):
     bbs = output['boxes'].cpu().detach().numpy().astype(np.uint16)

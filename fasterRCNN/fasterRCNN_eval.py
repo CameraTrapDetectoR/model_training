@@ -53,15 +53,33 @@ test_df = pd.read_csv(output_path + "test_df.csv")
 # define latest checkpoint
 checkpoint = torch.load(checkpoint_file)
 
+# Load model type
+model_type = checkpoint['model_type']
+
+# Review loss history
+loss_history = checkpoint['loss_history']
+plot_losses(model_type, loss_history)
 
 # load dictionaries
 label2target = checkpoint['label2target']
 target2label = {t: l for l, t in label2target.items()}
 
-# re-initialize the model?
+# re-initialize the model
 num_classes = checkpoint['num_classes']
 model = get_model(num_classes)
 
+# load model weights
+model.load_state_dict(checkpoint['state_dict'])
+
 # deploy model on test images
 gt_df, pred_df = deploy(test_df, sample=False)
+
+# If evaluation provides evidence of strong performance, save weights for loading into R package
+path2weights = output_path + "weights_" + model_type + ".pth"
+torch.save(dict(model.to(device='cpu').state_dict()), path2weights.replace('.pth', '_cpu.pth'))
+
+# Model evaluation complete!
+
+
+
 

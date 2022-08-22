@@ -43,8 +43,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # Note: Manually change output_path and checkpoint_file to the training session being resumed and its latest checkpoint
 output_path = "./output/test/startdate_20220810_fasterRCNN_species_4bs_4gradaccumulation_9momentum_0005weight_decay_005lr/"
 checkpoint_file = output_path + "checkpoint_" + "12epochs.pth.tar"
-# new path2weights depending on the day
-path2weights = output_path + "weights_" + model_type + time.strftime("_%Y%m%d") + ".pth"
+path2weights = output_path + "weights_" + model_type + ".pth"
 
 # load training and validation data files
 train_df = pd.read_csv(output_path + "train_df.csv")
