@@ -290,7 +290,7 @@ def split_df(df, columns2stratify):
     df_unique_filename = df.drop_duplicates(subset='filename', keep='first')
     trn_ids, rem_ids = train_test_split(df_unique_filename['filename'], shuffle=True,
                                         stratify=df_unique_filename[columns2stratify],
-                                        test_size=0.4, random_state=22)
+                                        test_size=0.3, random_state=22)
     train_df = df[df['filename'].isin(trn_ids)].reset_index(drop=True)
     rem_df = df[df['filename'].isin(rem_ids)].reset_index(drop=True)
     rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
