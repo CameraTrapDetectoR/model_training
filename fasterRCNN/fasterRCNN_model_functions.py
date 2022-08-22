@@ -4,7 +4,6 @@
 # Define class size range based on model type
 def class_range(model_type):
     if model_type == 'species':
-        # testing smaller numbers w data augmentation, speed up training time, train more species
         max_per_category = 1000
         min_per_category = 300
     if model_type == 'family':
@@ -135,6 +134,7 @@ def define_dictionary(df, model_type):
         thresh = 100
         for label in overMax:
             temp = balanced_df
+            # loop through each family
             subset_df = df[df['family'] == label]
             # list db with image numbers above and below threshold
             fewer = list({k for (k, v) in Counter(subset_df['database']).items() if v <= thresh})
@@ -288,22 +288,24 @@ def define_dictionary(df, model_type):
 # split df into training / validation sets
 def split_df(df, columns2stratify):
     df_unique_filename = df.drop_duplicates(subset='filename', keep='first')
+    # split 70% of images into training set
     trn_ids, rem_ids = train_test_split(df_unique_filename['filename'], shuffle=True,
                                         stratify=df_unique_filename[columns2stratify],
-                                        test_size=0.4, random_state=22)
+                                        test_size=0.3, random_state=22)
     train_df = df[df['filename'].isin(trn_ids)].reset_index(drop=True)
     rem_df = df[df['filename'].isin(rem_ids)].reset_index(drop=True)
     rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
+    # split remaining 30% evenly between validation and test sets
     val_ids, test_ids = train_test_split(rem_unique_filename['filename'], shuffle=True,
                                         stratify=rem_unique_filename[columns2stratify],
                                         test_size=0.5, random_state=22)
     val_df = rem_df[rem_df['filename'].isin(val_ids)].reset_index(drop=True)
     test_df = rem_df[rem_df['filename'].isin(test_ids)].reset_index(drop=True)
-
     return train_df, val_df, test_df
 
 # Create PyTorch dataset
 class DetectDataset(torch.utils.data.Dataset):
+    # set initial inputs
     def __init__(self, df, image_dir, w, h, transform):
         self.image_dir = image_dir
         self.df = df
@@ -338,6 +340,7 @@ class DetectDataset(torch.utils.data.Dataset):
             'boxes': torch.tensor(boxes).float(),
             'labels': torch.tensor([label2target[i] for i in labels]).long()
         }
+        # apply data augmentation
         if self.transform is not None:
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
             img = augmented['image'].to(device).float()
@@ -433,10 +436,9 @@ def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_s
         val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
     # Balance class weights for other models
     else:
-        # set up class weights
+        # set up class labels
         s = dict(Counter(train_df['LabelName']))
         # weight all other classes equally by num of classes
-        # note : prob a way to do this by samples as well, but ok for now
         s = {x: (1 / (num_classes - 1)) for x in s}
         # sanity check weighting was done correctly
         assert math.isclose(sum(s.values()), 1, abs_tol=0.001) == True
