@@ -187,8 +187,6 @@ for epoch in range(num_epochs):
         best_loss = val_loss
         # update model weights
         best_model_wts = copy.deepcopy(model.state_dict())
-        # save best model weights
-        torch.save(model.state_dict(), path2weights)
 
     # adjust learning rate
     lr_scheduler.step(val_loss)
@@ -198,7 +196,7 @@ for epoch in range(num_epochs):
 
     # save model state
     checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target)
-    checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth.tar"
+    checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
 
 # END

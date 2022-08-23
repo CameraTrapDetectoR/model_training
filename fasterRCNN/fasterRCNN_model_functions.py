@@ -479,7 +479,7 @@ def save_checkpoint(checkpoint, checkpoint_file):
 
 def load_checkpoint(checkpoint_file):
     print(" Loading saved model state")
-    checkpoint = torch.load(checkpoint_file)
+    checkpoint = torch.load(checkpoint_file, map_location=torch.device('cpu'))
     model.load_state_dict(checkpoint['state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     lr_scheduler.load_state_dict(checkpoint['scheduler'])
