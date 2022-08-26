@@ -11,6 +11,8 @@
 import os
 
 # determine operating system, for batch vs. local jobs
+import torch.cuda
+
 if os.name == 'posix':
     local = False
 else:
@@ -137,7 +139,9 @@ for epoch in range(num_epochs):
         # forward pass
         losses = model(images, targets)
         loss = sum(loss for loss in losses.values())
-        loss = loss / grad_accumulation # normalize loss to account for batch accumulation
+
+        # normalize loss to account for batch accumulation
+        loss = (loss + eps) / grad_accumulation
 
         # backward pass
         loss.backward()
@@ -146,6 +150,7 @@ for epoch in range(num_epochs):
         if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
             optimizer.step()
             optimizer.zero_grad()
+            print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
         # update loss
         running_loss += float(loss)
@@ -172,6 +177,7 @@ for epoch in range(num_epochs):
             val_loss = val_loss / grad_accumulation
             if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
                 optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
 
             # update loss
             running_val_loss += float(val_loss)
