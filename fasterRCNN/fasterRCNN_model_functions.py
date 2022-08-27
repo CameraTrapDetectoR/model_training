@@ -82,6 +82,11 @@ def wrangle_df(df, IMAGE_ROOT):
 
 # define model class dictionary and create representative sample
 def define_dictionary(df, model_type):
+    """
+    Creates balanced sample from total available training images per model_type.
+    Sample is representative of target class and database (image source).
+    """
+
     if model_type == 'general':
         # keep images only in the general categories
         df = df[~df['general_category'] != "nan"].reset_index()
@@ -287,6 +292,11 @@ def define_dictionary(df, model_type):
 
 # split df into training / validation sets
 def split_df(df, columns2stratify):
+    """
+    Takes df, columns2stratify output from the wrangle_df function and splits the dataset by the stratified column.
+    70% of total data is allocated to training, while 15% each is allocated to validation and testing.
+    """
+
     df_unique_filename = df.drop_duplicates(subset='filename', keep='first')
     # split 70% of images into training set
     trn_ids, rem_ids = train_test_split(df_unique_filename['filename'], shuffle=True,
@@ -305,6 +315,17 @@ def split_df(df, columns2stratify):
 
 # Create PyTorch dataset
 class DetectDataset(torch.utils.data.Dataset):
+    """
+    Builds dataset with images and their respective targets, bounding boxes and class labels.
+    DF must include: filename containing pathway to individual images; bbox ccordinates in format proportional to
+    image size (i.e. all bbox coordinates [0,1]) with xmin, ymin corresponding to upper left corner and
+    xmax, ymax corresponding to lower right corner.
+    Images are resized, channels converted, and augmented according to data augmentation pipelines defined below.
+    Bboxes also undergo corresponding data augmentation.
+    Each filename corresponds to a 'target' dict of bboxes and labels.
+    Images and targets are returned as Tensors.
+    """
+
     # set initial inputs
     def __init__(self, df, image_dir, w, h, transform):
         self.image_dir = image_dir
@@ -357,12 +378,12 @@ class DetectDataset(torch.utils.data.Dataset):
 # define data augmentation pipelines
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
-    A.Affine(rotate=(-30,30), fit_output=True, p=0.3),
-    A.Affine(shear=(30), fit_output=True, p=0.3),
+    A.Affine(rotate=(-30,30), fit_output=True, p=0.3, keep_ratio=True),
+    A.Affine(shear=(-30,30), fit_output=True, p=0.3, keep_ratio=True),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
     ToTensorV2(),
-], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'], min_visibility=0),
+], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 val_transform = A.Compose([
     ToTensorV2(),
