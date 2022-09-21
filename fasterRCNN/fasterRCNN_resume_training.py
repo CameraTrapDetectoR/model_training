@@ -83,7 +83,10 @@ train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=408, h=307, transf
 val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=408, h=307, transform=val_transform)
 
 # Get dataloaders
-train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+# note: weighted random sampler may be producing training errors
+# train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
 
 # train the model
 print("training model on ", device)

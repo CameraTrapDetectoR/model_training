@@ -93,7 +93,10 @@ batch_size = 4 # Note: effective batch size = batch_size * grad_accumulation
 grad_accumulation = 4
 
 # define PyTorch data loaders
-train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+# note: weighted random sampler may be producing training errors
+# train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
 
 # make output directory and filepaths
 output_path = "./output/" + time.strftime("%Y%m%d_") + "fasterRCNN_" + model_type + "_" + \
@@ -141,7 +144,7 @@ for epoch in range(num_epochs):
         loss = sum(loss for loss in losses.values())
 
         # normalize loss to account for batch accumulation
-        loss = (loss + eps) / grad_accumulation
+        loss = loss / grad_accumulation
 
         # backward pass
         loss.backward()
@@ -153,7 +156,7 @@ for epoch in range(num_epochs):
             print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
         # update loss
-        running_loss += float(loss)
+        running_loss += loss.item()
 
     # record training loss
     loss_history['train'].append(running_loss/len(train_loader))

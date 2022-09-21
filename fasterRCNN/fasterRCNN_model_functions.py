@@ -326,7 +326,6 @@ class DetectDataset(torch.utils.data.Dataset):
     Images and targets are returned as Tensors.
     """
 
-    # set initial inputs
     def __init__(self, df, image_dir, w, h, transform):
         self.image_dir = image_dir
         self.df = df
@@ -336,14 +335,17 @@ class DetectDataset(torch.utils.data.Dataset):
         self.transform = transform
 
     def __getitem__(self, item):
-        #create image id
+        # create image id
         image_id = self.image_infos[item]
         # create full path to open each image file
         img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
-        # open image, convert to numpy array
-        # resize here so bboxes can also be resized before transformations
-        img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
-        img = np.array(img, dtype="float32")/255.
+        # open image
+        img = cv2.imread(img_path)
+        # reformat color channels
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # resize image so bboxes can also be converted
+        img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
+        img = img.astype(np.float32) / 255.
         # filter df rows for img
         df = self.df
         data = df[df['filename'] == image_id]
@@ -352,21 +354,21 @@ class DetectDataset(torch.utils.data.Dataset):
         # extract bbox coordinates
         data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
         # convert to absolute values for model input
-        data[:,[0,2]] *= self.w
-        data[:,[1,3]] *= self.h
+        data[:, [0, 2]] *= self.w
+        data[:, [1, 3]] *= self.h
         # convert coordinates to list
         boxes = data.tolist()
-        # convert bboxes and labels to a tensor dictionary
+        # convert bboxes and labels to dictionary
         target = {
-            'boxes': torch.tensor(boxes).float(),
+            'boxes': boxes,
             'labels': torch.tensor([label2target[i] for i in labels]).long()
         }
         # apply data augmentation
         if self.transform is not None:
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
-            img = augmented['image'].to(device).float()
+            img = augmented['image']
             target['boxes'] = augmented['bboxes']
-        target['boxes'] = torch.tensor(target['boxes']).float() #for some reason, ToTensorV2() isn't working
+        target['boxes'] = torch.tensor(target['boxes']).float()  # ToTensorV2() isn't working on bboxes
         return img, target
 
     def collate_fn(self, batch):
@@ -375,18 +377,19 @@ class DetectDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.image_infos)
 
+
 # define data augmentation pipelines
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
-    A.Affine(rotate=(-30,30), fit_output=True, p=0.3, keep_ratio=True),
-    A.Affine(shear=(-30,30), fit_output=True, p=0.3, keep_ratio=True),
+    A.Affine(rotate=(-30, 30), fit_output=True, p=0.3),
+    A.Affine(shear=(-30,30), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
-    ToTensorV2(),
+    ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 val_transform = A.Compose([
-    ToTensorV2(),
+    ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 
@@ -433,6 +436,7 @@ def get_model(num_classes):
     return model
 
 # Define PyTorch data loaders
+#TODO: troubleshoot this
 def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size):
     # for pig model, oversample Suidae to give it weight equal to other classes combined
     if model_type == 'pig_only':
@@ -539,9 +543,8 @@ def decode_output(output, labels_as_numbers = False):
     return bbs.tolist(), confs.tolist(), labels.tolist()
 
 # deploy function
-def deploy(df, sample=False, w=408, h=307):
+def deploy(df, w=408, h=307):
     model.eval()
-    model.to(device)
     image_infos = df.filename.unique()
     if sample:
         image_infos = random.sample(list(image_infos), 10)
