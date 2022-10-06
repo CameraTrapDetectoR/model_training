@@ -27,7 +27,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 # import model libs
 from tqdm import tqdm
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
+from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_ResNet50_FPN_V2_Weights
 
 # import deploy/eval libs
 from torchvision.transforms.functional import to_pil_image

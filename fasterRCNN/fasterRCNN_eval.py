@@ -113,10 +113,18 @@ target = [
 ]
 
 # initialize metric
-metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
+metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True, iou_thresholds = 0.5)
 metric.update(preds, target)
 results = metric.compute()
+
 #TODO: save computed metrics to file
+#test this:
+with open("metrics.txt", "w") as f:
+    for key, value in results.items():
+        f.write('%s:%s\n' % (key, value))
+
+#TODO: add detection-level metrics from paper: precision, recall, and F1 score
+
 
 # If evaluation provides evidence of strong performance, save weights for loading into R package
 path2weights = output_path + "weights_" + model_type + ".pth"

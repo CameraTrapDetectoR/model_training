@@ -381,8 +381,8 @@ class DetectDataset(torch.utils.data.Dataset):
 # define data augmentation pipelines
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
-    A.Affine(rotate=(-30, 30), fit_output=True, p=0.3),
-    A.Affine(shear=(-30,30), fit_output=True, p=0.3),
+    A.Affine(rotate=(-20, 20), fit_output=True, p=0.3),
+    A.Affine(shear=(-20,20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
     ToTensorV2()
@@ -430,13 +430,12 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 # define model
 def get_model(num_classes):
     # initialize model
-    model = fasterrcnn_resnet50_fpn_v2()
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    return model
+    model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_v2_Weights.DEFAULT)
+    #in_features = model.roi_heads.box_predictor.cls_score.in_features
+    #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    return model.to(device)
 
 # Define PyTorch data loaders
-#TODO: troubleshoot this
 def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size):
     # for pig model, oversample Suidae to give it weight equal to other classes combined
     if model_type == 'pig_only':

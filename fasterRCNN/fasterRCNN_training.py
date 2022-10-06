@@ -82,21 +82,22 @@ val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=408, h=307, transform=
 model = get_model(num_classes).to(device)
 
 # define hyperparameters
+#TODO: revisit learning rate and weight decay once training is complete, if needed
 lr = 0.005
 momentum = 0.9
 weight_decay = 0.0005
 params = [p for p in model.parameters() if p.requires_grad]
 optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=weight_decay)
 lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, verbose=1)
-num_epochs = 1
+num_epochs = 30
 batch_size = 4 # Note: effective batch size = batch_size * grad_accumulation
 grad_accumulation = 4
 
 # define PyTorch data loaders
 # note: weighted random sampler may be producing training errors
-# train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
-train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
-val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
+train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+# train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+# val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
 
 # make output directory and filepaths
 output_path = "./output/" + time.strftime("%Y%m%d_") + "fasterRCNN_" + model_type + "_" + \
