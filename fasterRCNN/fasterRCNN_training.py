@@ -8,9 +8,12 @@
 # If resuming a previous training session, use './fasterRCNN_resume_training.py' file
 
 ## System Setup
+
 import os
 
 # determine operating system, for batch vs. local jobs
+import torch.cuda
+
 if os.name == 'posix':
     local = False
 else:
@@ -80,25 +83,28 @@ val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=408, h=307, transform=
 model = get_model(num_classes).to(device)
 
 # define hyperparameters
+#TODO: revisit learning rate and weight decay once training is complete, if needed
 lr = 0.005
 momentum = 0.9
 weight_decay = 0.0005
 params = [p for p in model.parameters() if p.requires_grad]
 optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=weight_decay)
 lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, verbose=1)
-num_epochs = 1
+num_epochs = 30
 batch_size = 4 # Note: effective batch size = batch_size * grad_accumulation
 grad_accumulation = 4
 
 # define PyTorch data loaders
+# note: weighted random sampler may be producing training errors
 train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+# train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+# val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
 
 # make output directory and filepaths
 output_path = "./output/" + time.strftime("%Y%m%d_") + "fasterRCNN_" + model_type + "_" + \
               str(batch_size) + 'bs_' + str(grad_accumulation) + 'gradaccumulation_' + \
               str(momentum).replace('0.', '') + "momentum_" + str(weight_decay).replace('0.', '') + \
               "weight_decay_" + str(lr).replace('0.', '') + "lr/"
-path2weights = output_path + "weights_" + model_type + time.strftime("_%Y%m%d") + ".pth"
 if not os.path.exists(output_path):
     os.makedirs(output_path)
 
@@ -137,7 +143,9 @@ for epoch in range(num_epochs):
         # forward pass
         losses = model(images, targets)
         loss = sum(loss for loss in losses.values())
-        loss = loss / grad_accumulation # normalize loss to account for batch accumulation
+
+        # normalize loss to account for batch accumulation
+        loss = loss / grad_accumulation
 
         # backward pass
         loss.backward()
@@ -146,9 +154,10 @@ for epoch in range(num_epochs):
         if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
             optimizer.step()
             optimizer.zero_grad()
+            print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
         # update loss
-        running_loss += float(loss)
+        running_loss += loss.item()
 
     # record training loss
     loss_history['train'].append(running_loss/len(train_loader))
@@ -172,6 +181,7 @@ for epoch in range(num_epochs):
             val_loss = val_loss / grad_accumulation
             if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
                 optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
 
             # update loss
             running_val_loss += float(val_loss)
@@ -187,8 +197,6 @@ for epoch in range(num_epochs):
         best_loss = val_loss
         # update model weights
         best_model_wts = copy.deepcopy(model.state_dict())
-        # save best model weights
-        torch.save(model.state_dict(), path2weights)
 
     # adjust learning rate
     lr_scheduler.step(val_loss)
@@ -198,7 +206,7 @@ for epoch in range(num_epochs):
 
     # save model state
     checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target)
-    checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth.tar"
+    checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
 
 # END

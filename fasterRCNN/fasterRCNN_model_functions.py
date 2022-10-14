@@ -82,6 +82,11 @@ def wrangle_df(df, IMAGE_ROOT):
 
 # define model class dictionary and create representative sample
 def define_dictionary(df, model_type):
+    """
+    Creates balanced sample from total available training images per model_type.
+    Sample is representative of target class and database (image source).
+    """
+
     if model_type == 'general':
         # keep images only in the general categories
         df = df[~df['general_category'] != "nan"].reset_index()
@@ -287,6 +292,11 @@ def define_dictionary(df, model_type):
 
 # split df into training / validation sets
 def split_df(df, columns2stratify):
+    """
+    Takes df, columns2stratify output from the wrangle_df function and splits the dataset by the stratified column.
+    70% of total data is allocated to training, while 15% each is allocated to validation and testing.
+    """
+
     df_unique_filename = df.drop_duplicates(subset='filename', keep='first')
     # split 70% of images into training set
     trn_ids, rem_ids = train_test_split(df_unique_filename['filename'], shuffle=True,
@@ -305,7 +315,17 @@ def split_df(df, columns2stratify):
 
 # Create PyTorch dataset
 class DetectDataset(torch.utils.data.Dataset):
-    # set initial inputs
+    """
+    Builds dataset with images and their respective targets, bounding boxes and class labels.
+    DF must include: filename containing pathway to individual images; bbox ccordinates in format proportional to
+    image size (i.e. all bbox coordinates [0,1]) with xmin, ymin corresponding to upper left corner and
+    xmax, ymax corresponding to lower right corner.
+    Images are resized, channels converted, and augmented according to data augmentation pipelines defined below.
+    Bboxes also undergo corresponding data augmentation.
+    Each filename corresponds to a 'target' dict of bboxes and labels.
+    Images and targets are returned as Tensors.
+    """
+
     def __init__(self, df, image_dir, w, h, transform):
         self.image_dir = image_dir
         self.df = df
@@ -319,10 +339,15 @@ class DetectDataset(torch.utils.data.Dataset):
         image_id = self.image_infos[item]
         # create full path to open each image file
         img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
-        # open image, convert to numpy array
-        # resize here so bboxes can also be resized before transformations
-        img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
-        img = np.array(img, dtype="float32")/255.
+        # open image
+        img = cv2.imread(img_path)
+        # reformat color channels
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # resize image so bboxes can also be converted
+        img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
+        img = img.astype(np.float32)/255.
+        #img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
+        #img = np.array(img, dtype="float32")/255.
         # filter df rows for img
         df = self.df
         data = df[df['filename'] == image_id]
@@ -337,15 +362,15 @@ class DetectDataset(torch.utils.data.Dataset):
         boxes = data.tolist()
         # convert bboxes and labels to a tensor dictionary
         target = {
-            'boxes': torch.tensor(boxes).float(),
+            'boxes': boxes,
             'labels': torch.tensor([label2target[i] for i in labels]).long()
         }
         # apply data augmentation
         if self.transform is not None:
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
-            img = augmented['image'].to(device).float()
+            img = augmented['image']
             target['boxes'] = augmented['bboxes']
-        target['boxes'] = torch.tensor(target['boxes']).float() #for some reason, ToTensorV2() isn't working
+        target['boxes'] = torch.tensor(target['boxes']).float() #ToTensorV2() isn't working on bboxes
         return img, target
 
     def collate_fn(self, batch):
@@ -354,18 +379,19 @@ class DetectDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.image_infos)
 
+
 # define data augmentation pipelines
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
-    A.Affine(rotate=(-30,30), fit_output=True, p=0.3),
-    A.Affine(shear=(30), fit_output=True, p=0.3),
+    A.Affine(rotate=(-20, 20), fit_output=True, p=0.3),
+    A.Affine(shear=(-20,20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
-    ToTensorV2(),
-], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'], min_visibility=0),
+    ToTensorV2()
+], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 val_transform = A.Compose([
-    ToTensorV2(),
+    ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 
@@ -406,10 +432,10 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 # define model
 def get_model(num_classes):
     # initialize model
-    model = fasterrcnn_resnet50_fpn_v2()
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    return model
+    model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
+    #in_features = model.roi_heads.box_predictor.cls_score.in_features
+    #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    return model.to(device)
 
 # Define PyTorch data loaders
 def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size):
@@ -479,7 +505,7 @@ def save_checkpoint(checkpoint, checkpoint_file):
 
 def load_checkpoint(checkpoint_file):
     print(" Loading saved model state")
-    checkpoint = torch.load(checkpoint_file)
+    checkpoint = torch.load(checkpoint_file, map_location=torch.device('cpu'))
     model.load_state_dict(checkpoint['state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     lr_scheduler.load_state_dict(checkpoint['scheduler'])
@@ -490,8 +516,22 @@ def load_checkpoint(checkpoint_file):
     label2target = checkpoint['label2target']
     return model, optimizer, lr_scheduler, epoch, loss_history, best_loss, model_type, label2target
 
+# plot losses
+def plot_losses(model_type, loss_history):
+    # extract losses and number of epochs
+    train_loss = [loss.detach().numpy() for loss in loss_history['train']]
+    val_loss = [loss.cpu().numpy() for loss in loss_history['val']]
+    epochs = range(1, len(train_loss) + 1)
+    # format and plot
+    plt.plot(epochs, train_loss, 'bo', label='Train Loss')
+    plt.plot(epochs, val_loss, 'b', label='Val Loss')
+    plt.title(model_type + "Faster R-CNN Loss History")
+    plt.legend()
+    plt.figure()
+
 # make predictions
 def decode_output(output, labels_as_numbers = False):
+    output = output[0]
     bbs = output['boxes'].cpu().detach().numpy().astype(np.uint16)
     if labels_as_numbers:
         labels = np.array(output['labels'].cpu().detach().numpy())
@@ -505,9 +545,8 @@ def decode_output(output, labels_as_numbers = False):
     return bbs.tolist(), confs.tolist(), labels.tolist()
 
 # deploy function
-def deploy(df, sample=False, w=408, h=307):
+def deploy(df, w=408, h=307):
     model.eval()
-    model.to(device)
     image_infos = df.filename.unique()
     if sample:
         image_infos = random.sample(list(image_infos), 10)
@@ -519,7 +558,7 @@ def deploy(df, sample=False, w=408, h=307):
         dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
         input, target = next(iter(dli))
         image = list(image.to(device) for image in input)
-        output = model(image)[0]
+        output = model(image)
         bbs, confs, labels = decode_output(output, labels_as_numbers=True)
         boxes = bbs
         if len(bbs) == 0:
@@ -554,20 +593,46 @@ def deploy(df, sample=False, w=408, h=307):
     pred_df.to_csv(eval_path + "pred_df.csv")
     return gt_df, pred_df
 
-# define intersection over union function - do we need this?
-#TODO: come back to redo naming conventions, debug and preprocess, set to loop over each image in test_df
-def IoU(pred_df, gt_df):
-    #TODO: extract prediction and target bbox coordinates for each image
+# filter predictions with low probability scores
+def filter_preds(output, threshold):
+    """
+    filter output based on probability score; exclude predictions less than threshold
+    :param output: model output of all predictions for a particular image
+    :param threshold: probability score below which to exclude all predictions
+    :return:
+    """
 
+    # format prediction data
+    bbs = output['boxes'].cpu().detach()
+    labels = output['labels'].cpu().detach()
+    confs = output['scores'].cpu().detach()
+
+    # id indicies of tensors to include in evaluation
+    idx = torch.where(confs > threshold)
+
+    # filter to predictions that meet the threshold
+    bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+
+    return bbs, labels, confs
+
+
+# define intersection over union function
+def intersect_over_union(bbs, tbs):
+    """
+    Calculates intersection over union
+    :param bbs: set of prediction bounding boxes for an image
+    :param tbs: set of true target bounding boxes for an image
+    :return: intersection over union
+    """
     # shape is (N,4) where N is number of bboxes per image
-    pred_xmin = pred_df[...,0:1] # slice tensor to maintain (N,1) shape
-    pred_ymin = pred_df[...,1:2]
-    pred_xmax = pred_df[...,2:3]
-    pred_ymax = pred_df[...,3:4]
-    target_xmin = gt_df[..., 0:1]
-    target_ymin = gt_df[..., 1:2]
-    target_xmax = gt_df[..., 2:3]
-    target_ymax = gt_df[..., 3:4]
+    pred_xmin = bbs[...,0:1] # slice tensor to maintain (N,1) shape
+    pred_ymin = bbs[...,1:2]
+    pred_xmax = bbs[...,2:3]
+    pred_ymax = bbs[...,3:4]
+    target_xmin = tbs[..., 0:1]
+    target_ymin = tbs[..., 1:2]
+    target_xmax = tbs[..., 2:3]
+    target_ymax = tbs[..., 3:4]
 
     # find area of each box
     pred_area = abs((pred_xmax - pred_xmin) * (pred_ymax - pred_ymin))
@@ -584,4 +649,24 @@ def IoU(pred_df, gt_df):
     union = pred_area + target_area - intersect + 1e-6 # add numeric stabilizer in case union = 0
 
     return intersect / union
+
+#TODO: add manual non-max suppression function
+def non_max_suppression(bbs, labels, confs, iou_threshold):
+    """
+    Perform non-maximum suppression on overlapping predictions based on
+    provided IoU threshold
+
+    :param bbs: predicted bounding boxes
+    :param labels: predicted class labels
+    :param confs: probability score
+    :param iou_threshold: intersection over union to consider
+    :return:
+    """
+
+    # boxes are returned from the model sorted by confidence score, so start with the first box
+    ref_box = bbs[0]
+    ref_class = labels[0]
+
+    # first compare predictions of the same class
+
 

@@ -42,9 +42,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 # set pathways
 # Note: Manually change output_path and checkpoint_file to the training session being resumed and its latest checkpoint
 output_path = "./output/test/startdate_20220810_fasterRCNN_species_4bs_4gradaccumulation_9momentum_0005weight_decay_005lr/"
-checkpoint_file = output_path + "checkpoint_" + "12epochs.pth.tar"
-# new path2weights depending on the day
-path2weights = output_path + "weights_" + model_type + time.strftime("_%Y%m%d") + ".pth"
+checkpoint_file = output_path + "checkpoints/modelstate_12epochs.pth"
 
 # load training and validation data files
 train_df = pd.read_csv(output_path + "train_df.csv")
@@ -84,7 +82,10 @@ train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=408, h=307, transf
 val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=408, h=307, transform=val_transform)
 
 # Get dataloaders
-train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+# note: weighted random sampler may be producing training errors
+# train_loader, val_loader = get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size)
+train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
 
 # train the model
 print("training model on ", device)
@@ -113,6 +114,7 @@ for epoch in range(epoch, num_epochs):
         if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
             optimizer.step()
             optimizer.zero_grad()
+            print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
         # update loss
         running_loss += float(loss)
@@ -139,6 +141,7 @@ for epoch in range(epoch, num_epochs):
             val_loss = val_loss / grad_accumulation
             if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
                 optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
 
             # update loss
             running_val_loss += float(val_loss)
@@ -154,8 +157,6 @@ for epoch in range(epoch, num_epochs):
         best_loss = val_loss
         # update model weights
         best_model_wts = copy.deepcopy(model.state_dict())
-        # save best model weights
-        torch.save(model.state_dict(), path2weights)
 
     # adjust learning rate
     lr_scheduler.step(val_loss)
@@ -166,7 +167,7 @@ for epoch in range(epoch, num_epochs):
     # save model state
     checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type,
                                    num_classes, label2target)
-    checkpoint_file = output_path + "checkpoint_" + str(epoch + 1) + "epochs.pth.tar"
+    checkpoint_file = output_path + "checkpoint_" + str(epoch + 1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
 
 # END
