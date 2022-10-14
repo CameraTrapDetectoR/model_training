@@ -8,6 +8,7 @@
 # If resuming a previous training session, use './fasterRCNN_resume_training.py' file
 
 ## System Setup
+
 import os
 
 # determine operating system, for batch vs. local jobs
@@ -104,7 +105,6 @@ output_path = "./output/" + time.strftime("%Y%m%d_") + "fasterRCNN_" + model_typ
               str(batch_size) + 'bs_' + str(grad_accumulation) + 'gradaccumulation_' + \
               str(momentum).replace('0.', '') + "momentum_" + str(weight_decay).replace('0.', '') + \
               "weight_decay_" + str(lr).replace('0.', '') + "lr/"
-path2weights = output_path + "weights_" + model_type + ".pth"
 if not os.path.exists(output_path):
     os.makedirs(output_path)
 
