@@ -335,7 +335,7 @@ class DetectDataset(torch.utils.data.Dataset):
         self.transform = transform
 
     def __getitem__(self, item):
-        # create image id
+        #create image id
         image_id = self.image_infos[item]
         # create full path to open each image file
         img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
@@ -345,7 +345,9 @@ class DetectDataset(torch.utils.data.Dataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # resize image so bboxes can also be converted
         img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32) / 255.
+        img = img.astype(np.float32)/255.
+        #img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
+        #img = np.array(img, dtype="float32")/255.
         # filter df rows for img
         df = self.df
         data = df[df['filename'] == image_id]
@@ -354,11 +356,11 @@ class DetectDataset(torch.utils.data.Dataset):
         # extract bbox coordinates
         data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
         # convert to absolute values for model input
-        data[:, [0, 2]] *= self.w
-        data[:, [1, 3]] *= self.h
+        data[:,[0,2]] *= self.w
+        data[:,[1,3]] *= self.h
         # convert coordinates to list
         boxes = data.tolist()
-        # convert bboxes and labels to dictionary
+        # convert bboxes and labels to a tensor dictionary
         target = {
             'boxes': boxes,
             'labels': torch.tensor([label2target[i] for i in labels]).long()
@@ -368,7 +370,7 @@ class DetectDataset(torch.utils.data.Dataset):
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
             img = augmented['image']
             target['boxes'] = augmented['bboxes']
-        target['boxes'] = torch.tensor(target['boxes']).float()  # ToTensorV2() isn't working on bboxes
+        target['boxes'] = torch.tensor(target['boxes']).float() #ToTensorV2() isn't working on bboxes
         return img, target
 
     def collate_fn(self, batch):
@@ -430,7 +432,7 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 # define model
 def get_model(num_classes):
     # initialize model
-    model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_v2_Weights.DEFAULT)
+    model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
     #in_features = model.roi_heads.box_predictor.cls_score.in_features
     #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     return model.to(device)
@@ -529,6 +531,7 @@ def plot_losses(model_type, loss_history):
 
 # make predictions
 def decode_output(output, labels_as_numbers = False):
+    output = output[0]
     bbs = output['boxes'].cpu().detach().numpy().astype(np.uint16)
     if labels_as_numbers:
         labels = np.array(output['labels'].cpu().detach().numpy())
@@ -555,7 +558,7 @@ def deploy(df, w=408, h=307):
         dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
         input, target = next(iter(dli))
         image = list(image.to(device) for image in input)
-        output = model(image)[0]
+        output = model(image)
         bbs, confs, labels = decode_output(output, labels_as_numbers=True)
         boxes = bbs
         if len(bbs) == 0:
@@ -590,20 +593,46 @@ def deploy(df, w=408, h=307):
     pred_df.to_csv(eval_path + "pred_df.csv")
     return gt_df, pred_df
 
-# define intersection over union function - do we need this?
-#TODO: come back to redo naming conventions, debug and preprocess, set to loop over each image in test_df
-def IoU(pred_df, gt_df):
-    #TODO: extract prediction and target bbox coordinates for each image
+# filter predictions with low probability scores
+def filter_preds(output, threshold):
+    """
+    filter output based on probability score; exclude predictions less than threshold
+    :param output: model output of all predictions for a particular image
+    :param threshold: probability score below which to exclude all predictions
+    :return:
+    """
 
+    # format prediction data
+    bbs = output['boxes'].cpu().detach()
+    labels = output['labels'].cpu().detach()
+    confs = output['scores'].cpu().detach()
+
+    # id indicies of tensors to include in evaluation
+    idx = torch.where(confs > threshold)
+
+    # filter to predictions that meet the threshold
+    bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+
+    return bbs, labels, confs
+
+
+# define intersection over union function
+def intersect_over_union(bbs, tbs):
+    """
+    Calculates intersection over union
+    :param bbs: set of prediction bounding boxes for an image
+    :param tbs: set of true target bounding boxes for an image
+    :return: intersection over union
+    """
     # shape is (N,4) where N is number of bboxes per image
-    pred_xmin = pred_df[...,0:1] # slice tensor to maintain (N,1) shape
-    pred_ymin = pred_df[...,1:2]
-    pred_xmax = pred_df[...,2:3]
-    pred_ymax = pred_df[...,3:4]
-    target_xmin = gt_df[..., 0:1]
-    target_ymin = gt_df[..., 1:2]
-    target_xmax = gt_df[..., 2:3]
-    target_ymax = gt_df[..., 3:4]
+    pred_xmin = bbs[...,0:1] # slice tensor to maintain (N,1) shape
+    pred_ymin = bbs[...,1:2]
+    pred_xmax = bbs[...,2:3]
+    pred_ymax = bbs[...,3:4]
+    target_xmin = tbs[..., 0:1]
+    target_ymin = tbs[..., 1:2]
+    target_xmax = tbs[..., 2:3]
+    target_ymax = tbs[..., 3:4]
 
     # find area of each box
     pred_area = abs((pred_xmax - pred_xmin) * (pred_ymax - pred_ymin))
@@ -620,4 +649,24 @@ def IoU(pred_df, gt_df):
     union = pred_area + target_area - intersect + 1e-6 # add numeric stabilizer in case union = 0
 
     return intersect / union
+
+#TODO: add manual non-max suppression function
+def non_max_suppression(bbs, labels, confs, iou_threshold):
+    """
+    Perform non-maximum suppression on overlapping predictions based on
+    provided IoU threshold
+
+    :param bbs: predicted bounding boxes
+    :param labels: predicted class labels
+    :param confs: probability score
+    :param iou_threshold: intersection over union to consider
+    :return:
+    """
+
+    # boxes are returned from the model sorted by confidence score, so start with the first box
+    ref_box = bbs[0]
+    ref_class = labels[0]
+
+    # first compare predictions of the same class
+
 
