@@ -1,11 +1,11 @@
-## - CameraTrapDetectoR Model Functions
+## - YOLO Model Functions
 
 
 # Define class size range based on model type
 def class_range(model_type):
     if model_type == 'species':
         # testing smaller numbers w data augmentation, speed up training time, train more species
-        max_per_category = 1200
+        max_per_category = 2100
         min_per_category = 300
     if model_type == 'family':
         max_per_category = 2000
@@ -17,6 +17,7 @@ def class_range(model_type):
         max_per_category = 1000
         min_per_category = 300
     return max_per_category, min_per_category
+
 
 # data wrangling
 def wrangle_df(df, IMAGE_ROOT):
@@ -61,8 +62,8 @@ def wrangle_df(df, IMAGE_ROOT):
 
     # create new columns for YOLO bboxes
     # Note: this formula applies to *normalized* bbox coordinates!
-    df['x_center'] = (df['XMin'] + df['XMax'])/2
-    df['y_center'] = (df['YMin'] + df['YMax'])/2
+    df['x_center'] = (df['XMin'] + df['XMax']) / 2
+    df['y_center'] = (df['YMin'] + df['YMax']) / 2
     df['w_bbox'] = df['XMax'] - df['XMin']
     df['h_bbox'] = df['YMax'] - df['YMin']
 
@@ -87,6 +88,7 @@ def wrangle_df(df, IMAGE_ROOT):
     choices = ['mammal', 'bird', 'human', 'vehicle']
     df['general_category'] = np.select(conditions, choices, default=np.NAN)
     return df
+
 
 # define model class dictionary and create representative sample
 def define_dictionary(df, model_type):
@@ -227,7 +229,7 @@ def define_dictionary(df, model_type):
         # locate images within df
         df = original_df.loc[original_df['filename'].isin(df['filename'])]
         # create dictionary of species labels
-        label2target = {l: t + 1 for t, l in enumerate(df['common.name'].unique())}
+        label2target = {l: t for t, l in enumerate(df['common.name'].unique())}
         # reverse dictionary for pytorch input
         target2label = {t: l for l, t in label2target.items()}
         pd.options.mode.chained_assignment = None
@@ -271,9 +273,10 @@ def define_dictionary(df, model_type):
             fam_df = pd.concat([lt_df, ht_df], ignore_index=True)
             balanced_df = pd.concat([temp, fam_df], ignore_index=True)
         df = pd.concat([balanced_df, df[df['family'].isin(fewerMax)],
-                        df[df['family'] == 'Suidae']]).drop_duplicates()  # combine dfs, including all available pig images
+                        df[df[
+                               'family'] == 'Suidae']]).drop_duplicates()  # combine dfs, including all available pig images
         df = original_df.loc[original_df['filename'].isin(df['filename'])]  # locate images within df
-        label2target = {l: t + 1 for t, l in enumerate(df['family'].unique())}  # create dictionary of family labels
+        label2target = {l: t for t, l in enumerate(df['family'].unique())}  # create dictionary of family labels
         target2label = {t: l for l, t in label2target.items()}  # reverse dictionary for pytorch input
         pd.options.mode.chained_assignment = None
         df['LabelName'] = df['family']  # standardize label name
@@ -282,6 +285,7 @@ def define_dictionary(df, model_type):
     df['class_id'] = df['LabelName'].map(label2target)
     # return df, dictionaries, df-split column
     return df, label2target, target2label, columns2stratify
+
 
 # split df into training / validation sets
 def split_df(df, columns2stratify):
@@ -293,11 +297,12 @@ def split_df(df, columns2stratify):
     rem_df = df[df['filename'].isin(rem_ids)].reset_index(drop=True)
     rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
     val_ids, test_ids = train_test_split(rem_ids, shuffle=True,
-                                        stratify=rem_unique_filename[columns2stratify],
-                                        test_size=0.5, random_state=22)
+                                         stratify=rem_unique_filename[columns2stratify],
+                                         test_size=0.5, random_state=22)
     val_df = rem_df[rem_df['filename'].isin(val_ids)].reset_index(drop=True)
     test_df = rem_df[rem_df['filename'].isin(test_ids)].reset_index(drop=True)
     return train_df, val_df, test_df
+
 
 # Create data directories
 def create_data_directories(model_type):
@@ -320,6 +325,7 @@ def create_data_directories(model_type):
     if not os.path.exists(test_lbl_path):
         os.makedirs(test_lbl_path)
 
+
 # Create PyTorch dataset
 class DetectDataset(torch.utils.data.Dataset):
     def __init__(self, df, w, h, image_dir, transform):
@@ -331,14 +337,14 @@ class DetectDataset(torch.utils.data.Dataset):
         self.transform = transform
 
     def __getitem__(self, item):
-        #create image id
+        # create image id
         image_id = self.image_infos[item]
         # create full path to open each image file
         img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
         # open image, convert to numpy array
         # resize here so bboxes can also be resized before transformations
         img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
-        img = np.array(img, dtype="float32")/255.
+        img = np.array(img, dtype="float32") / 255.
         # extract bbox and label data for image
         data = df[df['filename'] == image_id]
         # extract label names
@@ -346,8 +352,8 @@ class DetectDataset(torch.utils.data.Dataset):
         # extract bbox coordinates
         data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
         # convert to absolute values for model input
-        data[:,[0,2]] *= self.w
-        data[:,[1,3]] *= self.h
+        data[:, [0, 2]] *= self.w
+        data[:, [1, 3]] *= self.h
         # convert coordinates to list
         boxes = data.tolist()
         # convert bboxes and labels to a tensor dictionary
@@ -359,7 +365,7 @@ class DetectDataset(torch.utils.data.Dataset):
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
             img = augmented['image'].to(device).float()
             target['boxes'] = augmented['bboxes']
-        target['boxes'] = torch.tensor(target['boxes']).float() #for some reason, ToTensorV2() isn't working
+        target['boxes'] = torch.tensor(target['boxes']).float()  # for some reason, ToTensorV2() isn't working
         return img, target
 
     def collate_fn(self, batch):
@@ -368,11 +374,12 @@ class DetectDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.image_infos)
 
+
 # define data augmentation pipelines
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
-    A.Affine(rotate=(-30,30), fit_output=True, p=0.3),
-    A.Affine(shear=(30), fit_output=True, p=0.3),
+    A.Affine(rotate=(-20, 20), fit_output=True, p=0.3),
+    A.Affine(shear=(-20, 20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
     ToTensorV2(),
@@ -384,10 +391,12 @@ val_transform = A.Compose([
 )
 
 # Plot images
-COLORS = np.random.randint(0, 255, size=(80, 3),dtype="uint8")
+COLORS = np.random.randint(0, 255, size=(80, 3), dtype="uint8")
+
+
 # manually adjust score threshold?
 def show_img_bbox(img, targets, score_threshold=0.7):
-    #convert image format to PIL
+    # convert image format to PIL
     if torch.is_tensor(img):
         img = to_pil_image(img)
     elif isinstance(img, np.ndarray):
@@ -406,7 +415,7 @@ def show_img_bbox(img, targets, score_threshold=0.7):
     # plot image
     draw = ImageDraw.Draw(img)
     # plot bboxes
-    for i,tg in enumerate(boxes):
+    for i, tg in enumerate(boxes):
         if scores[i] > score_threshold:
             id_ = int(labels[i])
             bbox = boxes[i]
@@ -417,13 +426,9 @@ def show_img_bbox(img, targets, score_threshold=0.7):
             draw.text((xmin, ymin), name, fill=(255, 255, 255, 0))
     plt.imshow(np.array(img))
 
+
 # define model
-def get_model(num_classes):
-    # initialize model
-    model = fasterrcnn_resnet50_fpn_v2()
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    return model
+
 
 # Define PyTorch data loaders
 def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size):
@@ -454,13 +459,16 @@ def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_s
         val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
     return train_loader, val_loader
 
+
 # obtain learning rate
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
 
+
 # define checkpoint functions
-def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target):
+def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes,
+                      label2target):
     checkpoint = {'state_dict': model.state_dict(),
                   'optimizer': optimizer.state_dict(),
                   'epoch': epoch + 1,
@@ -473,9 +481,11 @@ def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_
                   'label2target': label2target}
     return checkpoint
 
+
 def save_checkpoint(checkpoint, checkpoint_file):
     print(" Saving model state")
     torch.save(checkpoint, checkpoint_file)
+
 
 def load_checkpoint(checkpoint_path):
     print(" Loading saved model state")
@@ -490,8 +500,9 @@ def load_checkpoint(checkpoint_path):
     label2target = checkpoint['label2target']
     return model, optimizer, lr_scheduler, epoch, loss_history, best_loss, model_type, label2target
 
+
 # make predictions
-def decode_output(output, labels_as_numbers = False):
+def decode_output(output, labels_as_numbers=False):
     bbs = output['boxes'].cpu().detach().numpy().astype(np.uint16)
     if labels_as_numbers:
         labels = np.array(output['labels'].cpu().detach().numpy())
@@ -503,6 +514,7 @@ def decode_output(output, labels_as_numbers = False):
     if len(ixs) == 1:
         bbs, confs, labels = [np.array([tensor]) for tensor in [bbs, confs, labels]]
     return bbs.tolist(), confs.tolist(), labels.tolist()
+
 
 # deploy function
 def deploy(df, sample=False, w=408, h=307):
@@ -554,20 +566,25 @@ def deploy(df, sample=False, w=408, h=307):
     pred_df.to_csv(eval_path + "pred_df.csv")
     return gt_df, pred_df
 
-# define intersection over union function - do we need this?
-#TODO: come back to redo naming conventions, debug and preprocess, set to loop over each image in test_df
-def IoU(pred_df, gt_df):
-    #TODO: extract prediction and target bbox coordinates for each image
 
+# define intersection over union function
+def IoU(bbs, tbs):
+    """
+    Calculates intersection over union
+    :param bbs: set of prediction bounding boxes for an image
+    :param tbs: set of true target bounding boxes for an image
+    :return: intersection over union
+    """
     # shape is (N,4) where N is number of bboxes per image
-    pred_xmin = pred_df[...,0:1] # slice tensor to maintain (N,1) shape
-    pred_ymin = pred_df[...,1:2]
-    pred_xmax = pred_df[...,2:3]
-    pred_ymax = pred_df[...,3:4]
-    target_xmin = test_df[..., 0:1]
-    target_ymin = test_df[..., 1:2]
-    target_xmax = test_df[..., 2:3]
-    target_ymax = test_df[..., 3:4]
+    # Convert coordinates from (x,y,w,h) to (x1, y1, x2, y2)
+    pred_xmin = bbs[..., 0:1] - bbs[..., 2:3] / 2
+    pred_ymin = bbs[..., 1:2] - bbs[..., 3:4] / 2
+    pred_xmax = bbs[..., 2:3] + bbs[..., 2:3] / 2
+    pred_ymax = bbs[..., 3:4] + bbs[..., 3:4] / 2
+    target_xmin = tbs[..., 0:1] - tbs[..., 2:3] / 2
+    target_ymin = tbs[..., 1:2] - tbs[..., 3:4] / 2
+    target_xmax = tbs[..., 2:3] + tbs[..., 2:3] / 2
+    target_ymax = tbs[..., 3:4] + tbs[..., 3:4] / 2
 
     # find area of each box
     pred_area = abs((pred_xmax - pred_xmin) * (pred_ymax - pred_ymin))
@@ -581,6 +598,6 @@ def IoU(pred_df, gt_df):
     intersect = (xmax - xmin).clamp(0) * (ymax - ymin).clamp(0)
 
     # find area of union
-    union = pred_area + target_area - intersect + 1e-6 # add numeric stabilizer in case union = 0
+    union = pred_area + target_area - intersect + 1e-6  # add numeric stabilizer in case union = 0
 
     return intersect / union
