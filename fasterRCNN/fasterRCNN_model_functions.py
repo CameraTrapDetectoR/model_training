@@ -386,6 +386,7 @@ train_transform = A.Compose([
     A.Affine(rotate=(-20, 20), fit_output=True, p=0.3),
     A.Affine(shear=(-20,20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
+    A.HueSaturationValue(p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
     ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
@@ -433,8 +434,8 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 def get_model(num_classes):
     # initialize model
     model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
-    #in_features = model.roi_heads.box_predictor.cls_score.in_features
-    #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     return model.to(device)
 
 # Define PyTorch data loaders
