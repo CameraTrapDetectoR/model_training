@@ -481,6 +481,26 @@ def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_s
         val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
     return train_loader, val_loader
 
+# try new dataloaders function w/o oversampling pigs
+def get_dataloaders_even(train_df, train_ds, val_ds, batch_size, num_classes):
+    # set up class labels
+    s = dict(Counter(train_df['LabelName']))
+    # weight all other classes equally by num of classes
+    s = {x: (1 / (num_classes - 1)) for x in s}
+    # sanity check weighting was done correctly
+    assert math.isclose(sum(s.values()), 1, abs_tol=0.001) == True
+    # assign sample weight to each image in the dataset
+    train_unique = train_df.drop_duplicates(subset='filename', keep='first')
+    sample_weights = train_unique.LabelName.map(s).tolist()
+    # create weighted random sampler
+    sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+    # define data loaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True,
+                              sampler=sampler)
+    # do not oversample for validation, just for training
+    val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+    return train_loader, val_loader
+
 # obtain learning rate
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -529,6 +549,8 @@ def plot_losses(model_type, loss_history):
     plt.title(model_type + "Faster R-CNN Loss History")
     plt.legend()
     plt.figure()
+
+#TODO: update evaluation functions here or delete
 
 # make predictions
 def decode_output(output, labels_as_numbers = False):
