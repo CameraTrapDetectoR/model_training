@@ -4,16 +4,16 @@
 # Define class size range based on model type
 def class_range(model_type):
     if model_type == 'species':
-        max_per_category = 1000
+        max_per_category = 10000
         min_per_category = 300
     if model_type == 'family':
-        max_per_category = 2000
-        min_per_category = 200
+        max_per_category = 10000
+        min_per_category = 300
     if model_type == 'general':
         max_per_category = 30000
         min_per_category = 5000
     if model_type == 'pig_only':
-        max_per_category = 1000
+        max_per_category = 10000
         min_per_category = 300
     return max_per_category, min_per_category
 
