@@ -4,16 +4,16 @@
 # Define class size range based on model type
 def class_range(model_type):
     if model_type == 'species':
-        max_per_category = 1000
+        max_per_category = 10000
         min_per_category = 300
     if model_type == 'family':
-        max_per_category = 2000
-        min_per_category = 200
+        max_per_category = 10000
+        min_per_category = 300
     if model_type == 'general':
         max_per_category = 30000
         min_per_category = 5000
     if model_type == 'pig_only':
-        max_per_category = 1000
+        max_per_category = 10000
         min_per_category = 300
     return max_per_category, min_per_category
 
@@ -386,6 +386,7 @@ train_transform = A.Compose([
     A.Affine(rotate=(-20, 20), fit_output=True, p=0.3),
     A.Affine(shear=(-20,20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
+    A.HueSaturationValue(p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
     ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
@@ -433,8 +434,8 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 def get_model(num_classes):
     # initialize model
     model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
-    #in_features = model.roi_heads.box_predictor.cls_score.in_features
-    #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    in_features = model.roi_heads.box_predictor.cls_score.in_features
+    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     return model.to(device)
 
 # Define PyTorch data loaders
@@ -478,6 +479,26 @@ def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_s
                                   sampler=sampler)
         # do not oversample for validation, just for training
         val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+    return train_loader, val_loader
+
+# try new dataloaders function w/o oversampling pigs
+def get_dataloaders_even(train_df, train_ds, val_ds, batch_size, num_classes):
+    # set up class labels
+    s = dict(Counter(train_df['LabelName']))
+    # weight all other classes equally by num of classes
+    s = {x: (1 / (num_classes - 1)) for x in s}
+    # sanity check weighting was done correctly
+    assert math.isclose(sum(s.values()), 1, abs_tol=0.001) == True
+    # assign sample weight to each image in the dataset
+    train_unique = train_df.drop_duplicates(subset='filename', keep='first')
+    sample_weights = train_unique.LabelName.map(s).tolist()
+    # create weighted random sampler
+    sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+    # define data loaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True,
+                              sampler=sampler)
+    # do not oversample for validation, just for training
+    val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
     return train_loader, val_loader
 
 # obtain learning rate
@@ -528,6 +549,8 @@ def plot_losses(model_type, loss_history):
     plt.title(model_type + "Faster R-CNN Loss History")
     plt.legend()
     plt.figure()
+
+#TODO: update evaluation functions here or delete
 
 # make predictions
 def decode_output(output, labels_as_numbers = False):
