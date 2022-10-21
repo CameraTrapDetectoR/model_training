@@ -5,7 +5,7 @@
 def class_range(model_type):
     if model_type == 'species':
         max_per_category = 10000
-        min_per_category = 300
+        min_per_category = 100
     if model_type == 'family':
         max_per_category = 10000
         min_per_category = 300
@@ -41,8 +41,7 @@ def wrangle_df(df, IMAGE_ROOT):
 
     # exclude species with poor annotations
     # TODO: review these images for updated bboxes
-    drops = ['Wood_Stork', 'Sandhill_Crane', 'Great_Egret',
-             'Great_Blue_Heron', 'Crested_Caracara', 'Black-crowned_Night_Heron', 'Caribou']
+    drops = ['Great_Egret', 'Great_Blue_Heron', 'Crested_Caracara', 'Caribou']
     df = df.loc[~df['common.name'].isin(drops)].reset_index(drop=True)
 
     # swap y-axis for images where bboxes originate in LL corner (pytorch looks for UL and LR corners)

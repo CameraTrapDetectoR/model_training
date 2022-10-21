@@ -40,8 +40,8 @@ exec(open('./fasterRCNN/fasterRCNN_model_functions.py').read())
 
 # set pathways
 # Note: Manually change output_path and checkpoint_file to the training session being evaluated and its latest checkpoint
-output_path = "./output/20221006_fasterRCNN_pig_only_2bs_8gradaccumulation_9momentum_001weight_decay_01lr/"
-checkpoint_file = output_path + "checkpoint_" + "20epochs.pth"
+output_path = "./output/20221006_fasterRCNN_species_2bs_8gradaccumulation_9momentum_001weightdecay_01lr/"
+checkpoint_file = output_path + "checkpoint_" + "18epochs.pth"
 eval_path = output_path + "evals/"
 if not os.path.exists(eval_path):
     os.makedirs(eval_path)
@@ -182,6 +182,12 @@ pred_df.to_csv(eval_path + "pred_df.csv")
 #     label2target['empty'] = 0
 #     target2label = {t: l for l, t in label2target.items()}
 
+# open target and pred dfs if working in a new session
+eval_path = "./output/20221006_fasterRCNN_species_2bs_8gradaccumulation_001weightdecay_01lr/evals/"
+pred_df = pd.read_csv(eval_path + "pred_df.csv")
+target_df = pd.read_csv(eval_path + "target_df.csv")
+
+
 # extract predicted bboxes, confidence scores, and labels
 preds = []
 targets = []
@@ -231,7 +237,7 @@ results = metric.compute()
 # save results to file
 # TODO: associate classes in mAP output to class names
 results_df = pd.DataFrame(results)
-results_df.to_csv(eval_path + "results.csv")
+results_df.to_csv(eval_path + "results_df.csv")
 
 # TODO: add detection-level metrics from paper: precision, recall, and F1 score
 
