@@ -4,8 +4,7 @@
 #######################
 
 ## DISCLAIMER!!!
-# Use this file only for initiating a *new* model training session
-# If resuming a previous training session, use './fasterRCNN_resume_training.py' file
+# Use this file only for initiating a *new* model training session using previously trained CameraTrapDetectoR weights
 
 ## System Setup
 
@@ -48,48 +47,52 @@ model_type = 'species'
 # Set min/max number images per category
 max_per_category, min_per_category = class_range(model_type)
 
-## Load and format labels
-# Load label .csv file - check to confirm most recent version
+# set min_per_category lower to simulate adding more classes
+min_per_category = 100
+
+# read in labels
 df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv")
 
+# format labels df
 df = wrangle_df(df, IMAGE_ROOT)
+
+#TODO: add check for boolean column to see if image was used in a previous training
+
 
 # create balanced training set, class dictionary, split stratifier
 df, label2target, target2label, columns2stratify = define_dictionary(df, model_type)
 num_classes = max(label2target.values()) + 1
 
-# review sample df
-# df.shape
-# Counter(df['LabelName'])
-# print(label2target)
+#TODO: code to put images not previously used in training into train_df
+
 
 # split the dataset into training and validation sets
 train_df, val_df, test_df = split_df(df, columns2stratify)
-# len(train_df), len(val_df), len(test_df)
-
-# TODO: add boolean column to df signifying whether image was used in train_df or val_df
-# TODO: add code to prioritize images that have not already been used in training
 
 # Load PyTorch dataset
-# Note: if no data augmentation desired for training data, use val_transform - performs only necessary pre-processing
 train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=408, h=307, transform=train_transform)
 val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=408, h=307, transform=val_transform)
 
-# test image
-# Note: execute this block with the same image a few times to see the augmentations
-# img, target = train_ds[44]
-# print('image size:', img.shape, type(img))
-# print('target: ', target)
-# show_img_bbox(img, target)
+# load previous model weights
+weight_file = '/.output/20221006_fasterRCNN_species_2bs_8gradaccumulation_9momentum_001weightdecay_01lr/checkpoint_20epochs.pth'
+weight_pt = torch.load(weight_file, map_location=device)
 
 # initialize model
-model = get_model(num_classes).to(device)
+model = fasterrcnn_resnet50_fpn_v2()
+model.load_state_dict(weight_pt['state_dict'])
+
+# update model with new classes
+in_features = model.roi_heads.box_predictor.cls_score.in_features
+model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+
+# return model
+model.to(device)
+
 
 # define hyperparameters
-#TODO: revisit learning rate and weight decay once training is complete, if needed
-lr = 0.005
+lr = 0.01
 momentum = 0.9
-weight_decay = 0.0005
+weight_decay = 0.001
 params = [p for p in model.parameters() if p.requires_grad]
 optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=weight_decay)
 lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, verbose=1)
@@ -98,10 +101,7 @@ batch_size = 4 # Note: effective batch size = batch_size * grad_accumulation
 grad_accumulation = 4
 
 # define PyTorch data loaders
-# note: weighted random sampler may be producing training errors
 train_loader, val_loader = get_dataloaders_even(train_df, train_ds, val_ds, num_classes, batch_size)
-# train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
-# val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=val_ds.collate_fn, drop_last=True)
 
 
 # make output directory and filepaths
@@ -217,3 +217,4 @@ for epoch in range(num_epochs):
 print("Model training complete!")
 # For inference, proceed to './fasterRCNN_eval.py'
 # To resume a previous training session, proceed to './fasterRCNN_resume_training.py'
+
