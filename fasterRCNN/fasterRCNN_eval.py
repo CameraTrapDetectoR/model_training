@@ -40,8 +40,8 @@ exec(open('./fasterRCNN/fasterRCNN_model_functions.py').read())
 
 # set pathways
 # Note: Manually change output_path and checkpoint_file to the training session being evaluated and its latest checkpoint
-output_path = "./output/20221006_fasterRCNN_species_2bs_8gradaccumulation_9momentum_001weightdecay_01lr/"
-checkpoint_file = output_path + "checkpoint_" + "20epochs.pth"
+output_path = "./output/20220908_fasterRCNN_species_2bs_8gradaccumulation_9momentum_0005weightdecay_005lr/"
+checkpoint_file = output_path + "checkpoint_" + "18epochs.pth"
 eval_path = output_path + "evals/"
 if not os.path.exists(eval_path):
     os.makedirs(eval_path)
@@ -182,14 +182,13 @@ pred_df.to_csv(eval_path + "pred_df.csv")
 #     target2label = {t: l for l, t in label2target.items()}
 
 # open target and pred dfs if working in a new session
-eval_path = "./output/20221006_fasterRCNN_species_2bs_8gradaccumulation_9momentum_001weightdecay_01lr/val_evals/"
+eval_path = output_path + "val_evals/"
 pred_df = pd.read_csv(eval_path + "pred_df.csv")
 target_df = pd.read_csv(eval_path + "target_df.csv")
 
 # re-define image infos corresponding to target_df
 # will be the same if working with test data, different if working with val data
 image_infos = target_df.filename.unique()
-
 
 # extract predicted bboxes, confidence scores, and labels
 preds = []
@@ -249,9 +248,12 @@ results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100
 # save results to file
 results_df.to_csv(eval_path + "results_df.csv")
 
+# save model architecture for loading into R package
+model.eval().to(device='cpu')
+s = torch.jit.script(model.to(device = 'cpu'))
+torch.jit.save(s, output_path + "/fasterrcnnArch_" + model_type + ".pt")
 
-
-# If evaluation provides evidence of strong performance, save weights for loading into R package
+# Save model weights for loading into R package
 path2weights = output_path + "weights_" + model_type + "_cpu.pth"
 torch.save(dict(model.to(device='cpu').state_dict()), path2weights)
 
