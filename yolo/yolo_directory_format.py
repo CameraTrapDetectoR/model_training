@@ -65,6 +65,12 @@ df['XDiff'] = df['XMax'] - df['XMin']
 df_tooSmall = df[(df['YDiff'] < 0.001) | (df['XDiff'] < 0.001)]
 assert df_tooSmall.shape[0] == 0, "Remove image files where bboxes are too small"
 
+# convert bbox coordinates to YOLO format
+df['x_center'] = (df['XMin'] + df['XMax']) / 2
+df['y_center'] = (df['YMin'] + df['YMax']) / 2
+df['w_bbox'] = df['XMax'] - df['XMin']
+df['h_bbox'] = df['YMax'] - df['YMin']
+
 # update column names for common name
 df['common.name_org'] = df['common.name']
 df['common.name'] = df['common.name.general']
@@ -93,7 +99,12 @@ df.loc[df['common.name'].isin(blackbirds), 'common.name'] = 'blackbird_spp'
 # TODO: identify other species folders to combine
 Counter(df['common.name'])
 
-# co
+# create new filename column
+df['filename_org'] = df['filename']
+files = []
+for index, row in df.iterrows():
+    files.append(row['common.name'] + "/" + row['filename_org'].split('/')[1])
+df['filename'] = files
 
 # Remove species with fewer images than class minimum
 class_min = 300
@@ -101,12 +112,18 @@ too_few = list({k for (k, v) in Counter(df['common.name']).items() if v < class_
 # remove general bird images
 too_few.append('Bird')
 print(too_few)
+
 #TODO: remove these folders from YOLO_IMAGES directory (all datasets)
 
 # exclude those images from the sample
 df = df[~df['common.name'].isin(too_few)]
 
-# TODO: loop through df to create the following columns:
-# 1. new filename column with updated common.name/file.jpg
-# 2. column for dataset image was organized into: train, val, test (or none)
+# Get full paths for all remaining image files
+paths = pd.DataFrame([os.path.join(dp, f) for dp, dn, fn in os.walk(YOLO_ROOT) for f in fn], columns=['path'])
 
+# Join paths to df
+df['pathway'] = paths[df['filename'].apply(lambda name: paths['path'].str.contains(name)).any(0)]
+
+# TODO: Remove any rows where pathway = NaN
+
+# TODO: Add column for image organization in train/val/test dataset
