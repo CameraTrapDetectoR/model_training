@@ -40,7 +40,7 @@ exec(open('./fasterRCNN/fasterRCNN_model_functions.py').read())
 
 # set pathways
 # Note: Manually change output_path and checkpoint_file to the training session being evaluated and its latest checkpoint
-output_path = "./output/20221006_fasterRCNN_species_2bs_8gradaccumulation_9momentum_001weightdecay_01lr/"
+output_path = "./output/20220908_fasterRCNN_species_2bs_8gradaccumulation_9momentum_0005weightdecay_005lr/"
 checkpoint_file = output_path + "checkpoint_" + "18epochs.pth"
 eval_path = output_path + "evals/"
 if not os.path.exists(eval_path):
@@ -86,8 +86,7 @@ model = get_model(num_classes).to(device)
 model.load_state_dict(checkpoint['state_dict'])
 
 # set dummy height and width for empty prediction bboxes
-w = 408
-h = 307
+empty = [0, 0, 408, 307].tolist()
 
 # setup holders for predictions and targets
 pred_df = []
@@ -138,7 +137,7 @@ for i in tqdm(range(len(image_infos))):
             'file_id': image_infos[i][:-4],
             'class_name': 'empty',
             'confidence': 1,
-            'bbox': [0, 0, w, h]
+            'bbox': empty
         })
     else:
         pred_df_i = pd.DataFrame({
@@ -183,15 +182,19 @@ pred_df.to_csv(eval_path + "pred_df.csv")
 #     target2label = {t: l for l, t in label2target.items()}
 
 # open target and pred dfs if working in a new session
-eval_path = "./output/20221006_fasterRCNN_species_2bs_8gradaccumulation_001weightdecay_01lr/evals/"
+eval_path = output_path + "val_evals/"
 pred_df = pd.read_csv(eval_path + "pred_df.csv")
 target_df = pd.read_csv(eval_path + "target_df.csv")
 
+# re-define image infos corresponding to target_df
+# will be the same if working with test data, different if working with val data
+image_infos = target_df.filename.unique()
 
 # extract predicted bboxes, confidence scores, and labels
 preds = []
 targets = []
 
+# create list of dictionaries for targets, preds for each image
 for i in tqdm(range(len(image_infos))):
     # extract predictions and targets for an image
     p_df = pred_df[pred_df['filename'] == image_infos[i]]
@@ -234,15 +237,23 @@ metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
 metric.update(preds, targets)
 results = metric.compute()
 
+# Add class names to results
+results_df = pd.DataFrame(results).reset_index().rename(columns={"index":"target"})
+results_df['class_name'] = results_df['target'].map(target2label)
+
+# add F1 score to results
+results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
+                              (results_df['map_per_class'] + results_df['mar_100_per_class']))
+
 # save results to file
-# TODO: associate classes in mAP output to class names
-results_df = pd.DataFrame(results)
 results_df.to_csv(eval_path + "results_df.csv")
 
-# TODO: add detection-level metrics from paper: precision, recall, and F1 score
+# save model architecture for loading into R package
+model.eval().to(device='cpu')
+s = torch.jit.script(model.to(device = 'cpu'))
+torch.jit.save(s, output_path + "/fasterrcnnArch_" + model_type + ".pt")
 
-
-# If evaluation provides evidence of strong performance, save weights for loading into R package
+# Save model weights for loading into R package
 path2weights = output_path + "weights_" + model_type + "_cpu.pth"
 torch.save(dict(model.to(device='cpu').state_dict()), path2weights)
 

@@ -39,6 +39,8 @@ def wrangle_df(df, IMAGE_ROOT):
     # exclude partial images
     df = df[df['partial.image'] == False]
 
+    #TODO: include function to filter images with overlapping bboxes with IOU above a certain threshold
+
     # exclude species with poor annotations
     # TODO: review these images for updated bboxes
     drops = ['Great_Egret', 'Great_Blue_Heron', 'Crested_Caracara', 'Caribou']
@@ -307,7 +309,7 @@ def split_df(df, columns2stratify):
     # split remaining 30% evenly between validation and test sets
     val_ids, test_ids = train_test_split(rem_unique_filename['filename'], shuffle=True,
                                         stratify=rem_unique_filename[columns2stratify],
-                                        test_size=0.5, random_state=22)
+                                        test_size=0.33, random_state=22)
     val_df = rem_df[rem_df['filename'].isin(val_ids)].reset_index(drop=True)
     test_df = rem_df[rem_df['filename'].isin(test_ids)].reset_index(drop=True)
     return train_df, val_df, test_df
