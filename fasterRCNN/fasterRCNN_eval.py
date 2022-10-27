@@ -40,8 +40,8 @@ exec(open('./fasterRCNN/fasterRCNN_model_functions.py').read())
 
 # set pathways
 # Note: Manually change output_path and checkpoint_file to the training session being evaluated and its latest checkpoint
-output_path = "./output/20220908_fasterRCNN_species_2bs_8gradaccumulation_9momentum_0005weightdecay_005lr/"
-checkpoint_file = output_path + "checkpoint_" + "18epochs.pth"
+output_path = "./output/20221006_fasterRCNN_pig_only_2bs_8gradaccumulation_9momentum_001weight_decay_01lr/"
+checkpoint_file = output_path + "checkpoint_" + "20epochs.pth"
 eval_path = output_path + "evals/"
 if not os.path.exists(eval_path):
     os.makedirs(eval_path)
@@ -86,7 +86,7 @@ model = get_model(num_classes).to(device)
 model.load_state_dict(checkpoint['state_dict'])
 
 # set dummy height and width for empty prediction bboxes
-empty = [0, 0, 408, 307].tolist()
+empty = [0, 0, 408, 307]
 
 # setup holders for predictions and targets
 pred_df = []
@@ -121,8 +121,8 @@ for i in tqdm(range(len(image_infos))):
         labels[nonpigs] = 1
 
     # perform classwise non-maximum suppression based on IOU threshold
-    # TODO: rethink how this works since dataset does not have any overlapping predictions
-    ixs = batched_nms(bbs, confs, labels, 0.05)
+    # TODO: rethink how this works since dataset does not have any overlapping predictions or multiple classes per training image
+    ixs = nms(bbs, confs, labels, 0.05)
     bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
     # format predictions
@@ -190,6 +190,16 @@ target_df = pd.read_csv(eval_path + "target_df.csv")
 # will be the same if working with test data, different if working with val data
 image_infos = target_df.filename.unique()
 
+# plot confidence scores
+# confs = pred_df['confidence']
+# n, bins, patches = plt.hist(confs, 101, density=False, facecolor='g', alpha=0.75)
+# plt.xlabel('Confidence Score')
+# plt.ylabel('Occurrences')
+# plt.title('Histogram of Confidence Scores')
+# plt.xlim(0, 1)
+# plt.grid(True)
+# plt.show()
+
 # extract predicted bboxes, confidence scores, and labels
 preds = []
 targets = []
@@ -206,7 +216,7 @@ for i in tqdm(range(len(image_infos))):
     # if continuing from env
     # pred_boxes = [box for box in p_df['bbox']]
     pred_scores = p_df['confidence'].values.tolist()
-    pred_labels = p_df['class_name'].map(label2target)
+    pred_labels = p_df['class_name'].map(out_label2target)
 
     # convert preds to dictionary of tensors
     pred_i = {
@@ -221,7 +231,7 @@ for i in tqdm(range(len(image_infos))):
     target_boxes = np.array([np.fromstring(box, sep=', ') for box in target_boxes])
     # if continuing from env
     # target_boxes = [box for box in t_df['bbox']]
-    target_labels = t_df['class_name'].map(label2target)
+    target_labels = t_df['class_name'].map(out_label2target)
     # convert targets to tensor dictionary
     target_i = {
         'boxes': torch.tensor(target_boxes),
@@ -239,7 +249,7 @@ results = metric.compute()
 
 # Add class names to results
 results_df = pd.DataFrame(results).reset_index().rename(columns={"index":"target"})
-results_df['class_name'] = results_df['target'].map(target2label)
+results_df['class_name'] = results_df['target'].map(out_target2label)
 
 # add F1 score to results
 results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /

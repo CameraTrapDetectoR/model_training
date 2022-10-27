@@ -435,8 +435,8 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 def get_model(num_classes):
     # initialize model
     model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    # in_features = model.roi_heads.box_predictor.cls_score.in_features
+    # model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     return model.to(device)
 
 # Define PyTorch data loaders

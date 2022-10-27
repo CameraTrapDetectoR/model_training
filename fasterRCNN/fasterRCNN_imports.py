@@ -36,3 +36,4 @@ from torchvision.ops import nms
 from torchvision.utils import draw_bounding_boxes
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from pprint import pprint
+import matplotlib.pyplot as plt
