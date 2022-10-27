@@ -17,6 +17,7 @@ def class_range(model_type):
         min_per_category = 300
     return max_per_category, min_per_category
 
+
 # data wrangling
 def wrangle_df(df, IMAGE_ROOT):
     # confirm bounding boxes are listed as proportions
@@ -39,7 +40,7 @@ def wrangle_df(df, IMAGE_ROOT):
     # exclude partial images
     df = df[df['partial.image'] == False]
 
-    #TODO: include function to filter images with overlapping bboxes with IOU above a certain threshold
+    # TODO: include function to filter images with overlapping bboxes with IOU above a certain threshold
 
     # exclude species with poor annotations
     # TODO: review these images for updated bboxes
@@ -80,6 +81,7 @@ def wrangle_df(df, IMAGE_ROOT):
     choices = ['mammal', 'bird', 'human', 'vehicle']
     df['general_category'] = np.select(conditions, choices, default=np.NAN)
     return df
+
 
 # define model class dictionary and create representative sample
 def define_dictionary(df, model_type):
@@ -242,7 +244,7 @@ def define_dictionary(df, model_type):
         df['LabelName'] = df['common.name']
         # stratify across species for train/val split
         columns2stratify = ['common.name']
-    #TODO: create balanced sample based on species for the pig-only and family models
+    # TODO: create balanced sample based on species for the pig-only and family models
     if model_type == 'pig_only':
         too_few = list({k for (k, v) in Counter(df['family']).items() if
                         v < min_per_category})  # list families with fewer images than category min
@@ -291,6 +293,7 @@ def define_dictionary(df, model_type):
         columns2stratify = ['family']
     return df, label2target, target2label, columns2stratify
 
+
 # split df into training / validation sets
 def split_df(df, columns2stratify):
     """
@@ -308,11 +311,12 @@ def split_df(df, columns2stratify):
     rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
     # split remaining 30% evenly between validation and test sets
     val_ids, test_ids = train_test_split(rem_unique_filename['filename'], shuffle=True,
-                                        stratify=rem_unique_filename[columns2stratify],
-                                        test_size=0.33, random_state=22)
+                                         stratify=rem_unique_filename[columns2stratify],
+                                         test_size=0.33, random_state=22)
     val_df = rem_df[rem_df['filename'].isin(val_ids)].reset_index(drop=True)
     test_df = rem_df[rem_df['filename'].isin(test_ids)].reset_index(drop=True)
     return train_df, val_df, test_df
+
 
 # Create PyTorch dataset
 class DetectDataset(torch.utils.data.Dataset):
@@ -336,7 +340,7 @@ class DetectDataset(torch.utils.data.Dataset):
         self.transform = transform
 
     def __getitem__(self, item):
-        #create image id
+        # create image id
         image_id = self.image_infos[item]
         # create full path to open each image file
         img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
@@ -346,9 +350,9 @@ class DetectDataset(torch.utils.data.Dataset):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         # resize image so bboxes can also be converted
         img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32)/255.
-        #img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
-        #img = np.array(img, dtype="float32")/255.
+        img = img.astype(np.float32) / 255.
+        # img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
+        # img = np.array(img, dtype="float32")/255.
         # filter df rows for img
         df = self.df
         data = df[df['filename'] == image_id]
@@ -357,8 +361,8 @@ class DetectDataset(torch.utils.data.Dataset):
         # extract bbox coordinates
         data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
         # convert to absolute values for model input
-        data[:,[0,2]] *= self.w
-        data[:,[1,3]] *= self.h
+        data[:, [0, 2]] *= self.w
+        data[:, [1, 3]] *= self.h
         # convert coordinates to list
         boxes = data.tolist()
         # convert bboxes and labels to a tensor dictionary
@@ -371,7 +375,7 @@ class DetectDataset(torch.utils.data.Dataset):
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
             img = augmented['image']
             target['boxes'] = augmented['bboxes']
-        target['boxes'] = torch.tensor(target['boxes']).float() #ToTensorV2() isn't working on bboxes
+        target['boxes'] = torch.tensor(target['boxes']).float()  # ToTensorV2() isn't working on bboxes
         return img, target
 
     def collate_fn(self, batch):
@@ -385,7 +389,7 @@ class DetectDataset(torch.utils.data.Dataset):
 train_transform = A.Compose([
     A.HorizontalFlip(p=0.5),
     A.Affine(rotate=(-20, 20), fit_output=True, p=0.3),
-    A.Affine(shear=(-20,20), fit_output=True, p=0.3),
+    A.Affine(shear=(-20, 20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.HueSaturationValue(p=0.3),
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
@@ -398,10 +402,12 @@ val_transform = A.Compose([
 )
 
 # Plot images
-COLORS = np.random.randint(0, 255, size=(80, 3),dtype="uint8")
+COLORS = np.random.randint(0, 255, size=(80, 3), dtype="uint8")
+
+
 # manually adjust score threshold?
 def show_img_bbox(img, targets, score_threshold=0.7):
-    #convert image format to PIL
+    # convert image format to PIL
     if torch.is_tensor(img):
         img = to_pil_image(img)
     elif isinstance(img, np.ndarray):
@@ -420,7 +426,7 @@ def show_img_bbox(img, targets, score_threshold=0.7):
     # plot image
     draw = ImageDraw.Draw(img)
     # plot bboxes
-    for i,tg in enumerate(boxes):
+    for i, tg in enumerate(boxes):
         if scores[i] > score_threshold:
             id_ = int(labels[i])
             bbox = boxes[i]
@@ -431,6 +437,7 @@ def show_img_bbox(img, targets, score_threshold=0.7):
             draw.text((xmin, ymin), name, fill=(255, 255, 255, 0))
     plt.imshow(np.array(img))
 
+
 # define model
 def get_model(num_classes):
     # initialize model
@@ -438,6 +445,7 @@ def get_model(num_classes):
     # in_features = model.roi_heads.box_predictor.cls_score.in_features
     # model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     return model.to(device)
+
 
 # Define PyTorch data loaders
 def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_size):
@@ -482,6 +490,7 @@ def get_dataloaders(train_df, train_ds, val_ds, model_type, num_classes, batch_s
         val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
     return train_loader, val_loader
 
+
 # try new dataloaders function w/o oversampling pigs
 def get_dataloaders_even(train_df, train_ds, val_ds, batch_size, num_classes):
     # set up class labels
@@ -502,13 +511,16 @@ def get_dataloaders_even(train_df, train_ds, val_ds, batch_size, num_classes):
     val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
     return train_loader, val_loader
 
+
 # obtain learning rate
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
 
+
 # define checkpoint functions
-def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target):
+def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes,
+                      label2target):
     checkpoint = {'state_dict': model.state_dict(),
                   'optimizer': optimizer.state_dict(),
                   'epoch': epoch + 1,
@@ -521,9 +533,11 @@ def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_
                   'label2target': label2target}
     return checkpoint
 
+
 def save_checkpoint(checkpoint, checkpoint_file):
     print(" Saving model state")
     torch.save(checkpoint, checkpoint_file)
+
 
 def load_checkpoint(checkpoint_file):
     print(" Loading saved model state")
@@ -538,6 +552,7 @@ def load_checkpoint(checkpoint_file):
     label2target = checkpoint['label2target']
     return model, optimizer, lr_scheduler, epoch, loss_history, best_loss, model_type, label2target
 
+
 # plot losses
 def plot_losses(model_type, loss_history):
     # extract losses and number of epochs
@@ -551,10 +566,9 @@ def plot_losses(model_type, loss_history):
     plt.legend()
     plt.figure()
 
-#TODO: update evaluation functions here or delete
 
 # make predictions
-def decode_output(output, labels_as_numbers = False):
+def decode_output(output, labels_as_numbers=False):
     output = output[0]
     bbs = output['boxes'].cpu().detach().numpy().astype(np.uint16)
     if labels_as_numbers:
@@ -567,6 +581,7 @@ def decode_output(output, labels_as_numbers = False):
     if len(ixs) == 1:
         bbs, confs, labels = [np.array([tensor]) for tensor in [bbs, confs, labels]]
     return bbs.tolist(), confs.tolist(), labels.tolist()
+
 
 # deploy function
 def deploy(df, w=408, h=307):
@@ -617,6 +632,87 @@ def deploy(df, w=408, h=307):
     pred_df.to_csv(eval_path + "pred_df.csv")
     return gt_df, pred_df
 
+def deploy_model(df, w, h, model_type, classwise, score_thresh, iou_thresh):
+    # get unique image filenames
+    image_infos = df.filename.unique()
+
+    # create placeholders for targets and predictions
+    pred_df = []
+    target_df = []
+    # deploy model on test images
+    model.eval()
+    for i in tqdm(range(len(image_infos))):
+        # define dataset and dataloader
+        dfi = df[df['filename'] == image_infos[i]]
+        dsi = DetectDataset(df=dfi, image_dir=IMAGE_ROOT, w=408, h=307, transform=val_transform)
+        dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
+
+        # extract image, bbox, and label info
+        input, target = next(iter(dli))
+        tbs = dsi[0][1]['boxes']
+        image = list(image.to(device) for image in input)
+
+        # run input through the model
+        output = model(image)[0]
+
+        # extract prediction bboxes, labels, scores
+        bbs, labels, confs = filter_preds(output, score_thresh)
+
+        # relabel predictions and targets for pig_only model
+        if model_type == 'pig_only':
+            # index the three new classes
+            pigs = labels == 31
+            nonpig = labels != (0 or 31)
+            # reassign labels
+            labels[pigs] = 2
+            labels[nonpig] = 1
+
+        # perform non-maximum suppression based on IOU threshold
+        if classwise == True:
+            ixs = batched_nms(bbs, confs, labels, iou_thresh)
+        else:
+            ixs = nms(bbs, confs, iou_thresh)
+
+        bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
+
+        # format predictions
+        bbs = bbs.tolist()
+        confs = confs.tolist()
+        labels = labels.tolist()
+
+        # save predictions and targets
+        if len(bbs) == 0:
+            pred_df_i = pd.DataFrame({
+                'filename': image_infos[i],
+                'file_id': image_infos[i][:-4],
+                'class_name': 'empty',
+                'confidence': 1,
+                'bbox': [0, 0, w, h]
+            })
+        else:
+            pred_df_i = pd.DataFrame({
+                'filename': image_infos[i],
+                'file_id': image_infos[i][:-4],
+                'class_name': [out_target2label[a] for a in labels],
+                'confidence': confs,
+                'bbox': bbs
+            })
+        tar_df_i = pd.DataFrame({
+            'filename': image_infos[i],
+            'file_id': image_infos[i][:-4],
+            'class_name': [out_target2label[a] for a in dfi['class_name'].tolist()],
+            'bbox': tbs.tolist()
+        })
+        pred_df.append(pred_df_i)
+        target_df.append(tar_df_i)
+
+    # concatenate preds and targets into dfs
+    pred_df = pd.concat(pred_df).reset_index(drop=True)
+    target_df = pd.concat(target_df).reset_index(drop=True)
+
+    return pred_df, target_df
+
+
 # filter predictions with low probability scores
 def filter_preds(output, threshold):
     """
@@ -639,6 +735,16 @@ def filter_preds(output, threshold):
 
     return bbs, labels, confs
 
+# plot confidence scores
+def plot_scores(pred_df):
+    confs = pred_df['confidence']
+    n, bins, patches = plt.hist(confs, 101, density=False, facecolor='g', alpha=0.75)
+    plt.xlabel('Confidence Score')
+    plt.ylabel('Occurrences')
+    plt.title('Histogram of Confidence Scores')
+    plt.xlim(0, 1)
+    plt.grid(True)
+    plt.show()
 
 # define intersection over union function
 def intersect_over_union(bbs, tbs):
@@ -649,10 +755,10 @@ def intersect_over_union(bbs, tbs):
     :return: intersection over union
     """
     # shape is (N,4) where N is number of bboxes per image
-    pred_xmin = bbs[...,0:1] # slice tensor to maintain (N,1) shape
-    pred_ymin = bbs[...,1:2]
-    pred_xmax = bbs[...,2:3]
-    pred_ymax = bbs[...,3:4]
+    pred_xmin = bbs[..., 0:1]  # slice tensor to maintain (N,1) shape
+    pred_ymin = bbs[..., 1:2]
+    pred_xmax = bbs[..., 2:3]
+    pred_ymax = bbs[..., 3:4]
     target_xmin = tbs[..., 0:1]
     target_ymin = tbs[..., 1:2]
     target_xmax = tbs[..., 2:3]
@@ -670,27 +776,72 @@ def intersect_over_union(bbs, tbs):
     intersect = (xmax - xmin).clamp(0) * (ymax - ymin).clamp(0)
 
     # find area of union
-    union = pred_area + target_area - intersect + 1e-6 # add numeric stabilizer in case union = 0
+    union = pred_area + target_area - intersect + 1e-6  # add numeric stabilizer in case union = 0
 
     return intersect / union
 
-#TODO: add manual non-max suppression function
-def non_max_suppression(bbs, labels, confs, iou_threshold):
-    """
-    Perform non-maximum suppression on overlapping predictions based on
-    provided IoU threshold
 
-    :param bbs: predicted bounding boxes
-    :param labels: predicted class labels
-    :param confs: probability score
-    :param iou_threshold: intersection over union to consider
-    :return:
-    """
+def eval_metrics(pred_df, target_df, out_label2target, out_target2label, format):
+    # get list of unique image filenames
+    image_infos = target_df.filename.unique()
 
-    # boxes are returned from the model sorted by confidence score, so start with the first box
-    ref_box = bbs[0]
-    ref_class = labels[0]
+    # extract predicted bboxes, confidence scores, and labels
+    preds = []
+    targets = []
 
-    # first compare predictions of the same class
+    # create list of dictionaries for targets, preds for each image
+    for i in tqdm(range(len(image_infos))):
+        # extract predictions and targets for an image
+        p_df = pred_df[pred_df['filename'] == image_infos[i]]
+        t_df = target_df[target_df['filename'] == image_infos[i]]
 
+        # format boxes based on input
+        if format == 'csv':
+            # pred detections
+            pred_boxes = [box.strip('[').strip(']').strip(',') for box in p_df['bbox']]
+            pred_boxes = np.array([np.fromstring(box, sep=', ') for box in pred_boxes])
+            # ground truth boxes
+            target_boxes = [box.strip('[').strip(']').strip(', ') for box in t_df['bbox']]
+            target_boxes = np.array([np.fromstring(box, sep=', ') for box in target_boxes])
+        if format == 'env':
+            # pred detections
+            pred_boxes = [box for box in p_df['bbox']]
+            # ground truth boxes
+            target_boxes = [box for box in t_df['bbox']]
 
+        # format scores and labels
+        pred_scores = p_df['confidence'].values.tolist()
+        pred_labels = p_df['class_name'].map(out_label2target)
+        target_labels = t_df['class_name'].map(out_label2target)
+
+        # convert preds to dictionary of tensors
+        pred_i = {
+            'boxes': torch.tensor(pred_boxes),
+            'scores': torch.tensor(pred_scores),
+            'labels': torch.tensor(pred_labels.values)
+        }
+
+        # convert targets to tensor dictionary
+        target_i = {
+            'boxes': torch.tensor(target_boxes),
+            'labels': torch.tensor(target_labels.values)
+        }
+
+        # add current image preds and targets to dictionary list
+        preds.append(pred_i)
+        targets.append(target_i)
+
+    # initialize metric
+    metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
+    metric.update(preds, targets)
+    results = metric.compute()
+
+    # Add class names to results
+    results_df = pd.DataFrame(results).reset_index().rename(columns={"index": "target"})
+    results_df['class_name'] = results_df['target'].map(out_target2label)
+
+    # add F1 score to results
+    results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
+                                  (results_df['map_per_class'] + results_df['mar_100_per_class']))
+
+    return results_df
