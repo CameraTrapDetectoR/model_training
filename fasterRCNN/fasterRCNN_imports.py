@@ -32,7 +32,7 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_
 # import deploy/eval libs
 from torchvision.transforms.functional import to_pil_image
 import random
-from torchvision.ops import nms
+from torchvision.ops import nms, batched_nms
 from torchvision.utils import draw_bounding_boxes
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from pprint import pprint

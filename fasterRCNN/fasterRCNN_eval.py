@@ -11,6 +11,8 @@
 import os
 
 # determine operating system, for batch vs. local jobs
+import torch.jit
+
 if os.name == 'posix':
     local = False
 else:
@@ -58,7 +60,7 @@ model_type = checkpoint['model_type']
 
 # Review loss history
 loss_history = checkpoint['loss_history']
-plot_losses(model_type, loss_history)
+# plot_losses(model_type, loss_history)
 
 # load dictionaries
 label2target = checkpoint['label2target']
@@ -80,7 +82,16 @@ else:
 
 # re-initialize the model
 num_classes = checkpoint['num_classes']
-model = get_model(num_classes).to(device)
+model = get_model(num_classes)
+
+# save model architecture for loading into R package
+#TODO: troublehsoot; this is crashing RStudio
+model.eval().to(device='cpu')
+s = torch.jit.script(model)
+torch.jit.save(s, output_path + "/fasterrcnnArch_" + model_type + "_test.pt")
+
+# test reloading model architecture - works
+model = torch.jit.load(output_path + "/fasterrcnnArch_" + model_type + "_test.pt")
 
 # load model weights
 model.load_state_dict(checkpoint['state_dict'])
@@ -110,13 +121,9 @@ results_df = eval_metrics(pred_df=pred_df, target_df=target_df,
 # TODO: give unique naming convention so folder can store multiple results dependent on images, thresholds being evaluated
 results_df.to_csv(eval_path + "results_df.csv")
 
-# save model architecture for loading into R package
-model.eval().to(device='cpu')
-s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + "/fasterrcnnArch_" + model_type + ".pt")
 
 # Save model weights for loading into R package
 path2weights = output_path + "weights_" + model_type + "_cpu.pth"
-torch.save(dict(model.to(device='cpu').state_dict()), path2weights)
+torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
 
 # Model evaluation complete!

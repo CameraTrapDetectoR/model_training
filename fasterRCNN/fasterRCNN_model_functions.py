@@ -442,9 +442,9 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 def get_model(num_classes):
     # initialize model
     model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
-    # in_features = model.roi_heads.box_predictor.cls_score.in_features
-    # model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    return model.to(device)
+    #in_features = model.roi_heads.box_predictor.cls_score.in_features
+    #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    return model
 
 
 # Define PyTorch data loaders
@@ -700,7 +700,7 @@ def deploy_model(df, w, h, model_type, classwise, score_thresh, iou_thresh):
         tar_df_i = pd.DataFrame({
             'filename': image_infos[i],
             'file_id': image_infos[i][:-4],
-            'class_name': [out_target2label[a] for a in dfi['class_name'].tolist()],
+            'class_name': dfi['LabelName'].tolist(),
             'bbox': tbs.tolist()
         })
         pred_df.append(pred_df_i)
