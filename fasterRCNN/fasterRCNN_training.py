@@ -50,8 +50,9 @@ max_per_category, min_per_category = class_range(model_type)
 
 ## Load and format labels
 # Load label .csv file - check to confirm most recent version
-df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv")
+df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv"
 
+# wrangle df
 df = wrangle_df(df, IMAGE_ROOT)
 
 # create balanced training set, class dictionary, split stratifier

@@ -84,10 +84,16 @@ else:
 num_classes = checkpoint['num_classes']
 model = get_model(num_classes)
 
+model = fasterrcnn_resnet50_fpn_v2()
+
 # save model architecture for loading into R package
 #TODO: troublehsoot; this is crashing RStudio
-model.eval().to(device='cpu')
-s = torch.jit.script(model)
+# with torch.no_grad():
+#     s = torch.jit.script(model())
+#     s.save(output_path + "/fasterrcnnArch_" + model_type + "_test.pt")
+
+model.eval()
+s = torch.jit.script(model.to(device='cpu'))
 torch.jit.save(s, output_path + "/fasterrcnnArch_" + model_type + "_test.pt")
 
 # test reloading model architecture - works
