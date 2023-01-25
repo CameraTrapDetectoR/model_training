@@ -25,8 +25,8 @@ if local:
     IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
     os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
 else:
-    IMAGE_ROOT = "/scratch/summit/burnsal@colostate.edu"
-    os.chdir('/projects/burnsal@colostate.edu/CameraTrapDetectoR')
+    IMAGE_ROOT = "/90daydata/cameratrapdetector/fasterrcnn"
+    os.chdir('/projects/cameratrapdetector')
 
 # Import packages
 exec(open('./fasterRCNN/fasterRCNN_imports.py').read())
@@ -50,7 +50,7 @@ max_per_category, min_per_category = class_range(model_type)
 
 ## Load and format labels
 # Load label .csv file - check to confirm most recent version
-df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv"
+df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv")
 
 # wrangle df
 df = wrangle_df(df, IMAGE_ROOT)
@@ -68,8 +68,6 @@ num_classes = max(label2target.values()) + 1
 train_df, val_df, test_df = split_df(df, columns2stratify)
 # len(train_df), len(val_df), len(test_df)
 
-# TODO: add boolean column to df signifying whether image was used in train_df or val_df
-# TODO: add code to prioritize images that have not already been used in training
 
 # Load PyTorch dataset
 # Note: if no data augmentation desired for training data, use val_transform - performs only necessary pre-processing
