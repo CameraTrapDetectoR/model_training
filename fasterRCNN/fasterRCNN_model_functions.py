@@ -392,6 +392,7 @@ train_transform = A.Compose([
     A.Affine(shear=(-20, 20), fit_output=True, p=0.3),
     A.RandomBrightnessContrast(brightness_by_max=True, p=0.3),
     A.HueSaturationValue(p=0.3),
+    # TODO: define height, width outside function and change these values to variables
     A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
     ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
@@ -439,12 +440,50 @@ def show_img_bbox(img, targets, score_threshold=0.7):
 
 
 # define model
-def get_model(num_classes):
-    # initialize model
-    model = fasterrcnn_resnet50_fpn_v2(weights=FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT)
-    #in_features = model.roi_heads.box_predictor.cls_score.in_features
-    #model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    return model
+def get_model(cnn_backbone, num_classes):
+    # generate smaller anchor boxes:
+    # TODO: think about adjusting anchor sizes depending on input image size
+    anchor_sizes = ((16,), (32,), (64,), (128,), (256,))
+    aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
+    anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
+
+    # feature map to perform RoI cropping
+    roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
+
+    # initialize model by class
+
+    if cnn_backbone == 'resnet50':
+        model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT', rpn_anchor_generator=rpn_anchor_generator)
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+        return model
+
+    if cnn_backbone == 'VGG16':
+        backbone = vgg16_bn(weights='DEFAULT').features
+        backbone.out_channels = 512
+        model = FasterRCNN(backbone=backbone,
+                           num_classes=num_classes,
+                           rpn_anchor_generator=anchor_gen,
+                           box_roi_pool=roi_pooler)
+        return(model)
+
+    if cnn_backbone == 'ConvNext':
+        backbone = convnext_small(weights='DEFAULT').features
+        #TODO: determine which ConvNext model to use, confirm out channels
+        backbone.out_channels = 768
+        model = FasterRCNN(backbone=backbone,
+                           num_classes=num_classes,
+                           rpn_anchor_generator=anchor_gen,
+                           box_roi_pool=roi_pooler)
+        return(model)
+
+
+
+
+
+
+
+
 
 
 # Define PyTorch data loaders
@@ -632,6 +671,7 @@ def deploy(df, w=408, h=307):
     pred_df.to_csv(eval_path + "pred_df.csv")
     return gt_df, pred_df
 
+
 def deploy_model(df, w, h, model_type, classwise, score_thresh, iou_thresh):
     # get unique image filenames
     image_infos = df.filename.unique()
@@ -735,6 +775,7 @@ def filter_preds(output, threshold):
 
     return bbs, labels, confs
 
+
 # plot confidence scores
 def plot_scores(pred_df):
     confs = pred_df['confidence']
@@ -745,6 +786,7 @@ def plot_scores(pred_df):
     plt.xlim(0, 1)
     plt.grid(True)
     plt.show()
+
 
 # define intersection over union function
 def intersect_over_union(bbs, tbs):
