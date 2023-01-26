@@ -20,5 +20,6 @@ dependencies:
   - pytorch::pytorch=1.13.0
   - pytorch::torchvision=0.14.1 # support for new swin transformer backbones
   - conda-forge::cudatoolkit=10.0 # latest version on Ceres
-  - conda-forge::cudnn=8.2  # latest version on Ceres nb
+  - conda-forge::cudatoolkit=11.2 # latest version on Atlas
+  - conda-forge::cudnn=8.2  # latest version on Ceres
 
