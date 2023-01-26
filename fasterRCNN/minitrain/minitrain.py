@@ -23,6 +23,9 @@ from albumentations.pytorch.transforms import ToTensorV2
 import matplotlib.pylab as plt
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from sklearn.model_selection import GridSearchCV
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+from fasterRCNN.minitrain.data_augmentation import train_augmentation
 
 from tqdm import tqdm
 from torchvision.models.detection.rpn import AnchorGenerator
@@ -125,24 +128,29 @@ val_df = df[df['filename'].isin(val_ids)].reset_index(drop=True)
 Counter(train_df['LabelName'])
 Counter(val_df['LabelName'])
 
-# define data augmentation pipelines
 
-#TODO determine whether grids need to be same length?
-affine_grid = np.array([(x, y) for x in range(0, 35, 10) for y in range(0, 35, 10)]).transpose()
-hue_sat_grid = list(range(0, 35, 10))
+# set image size grid
+#TODO: determine if aspect ratio needs to change depending on model backbone
+w_grid = [408, 816, 1224, 1632, 2040]
+h_grid = [307, 614, 921, 1228, 1535]
 
-train_transform = A.Compose([
-    A.HorizontalFlip(p=0.5),
-    A.Affine(rotate=(-affine_grid[0, i], affine_grid[0, i]), fit_output=True, p=0.3), # loop through values of affine_grid[0]
-    A.Affine(shear=(-affine_grid[1, i], affine_grid[0, i]), fit_output=True, p=0.3), # loop through values of affine_grid[1]
-    A.RandomBrightnessContrast(brightness_limit= affine_grid[0, -i],
-                               contrast_limit = affine_grid[1, -i], True, p=0.3), # loop (backwards?) through affine_grid for brightness_limit and contrast_limit
-    A.HueSaturationValue(p=0.3), # loop through hue_sat grid for all parameter values
-    # TODO: define height, width outside function and change these values to variables
-    A.RandomSizedBBoxSafeCrop(height=307, width=408, erosion_rate=0.2, p=0.5),
-    ToTensorV2()
-], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
-)
+# Define width and height OUTSIDE any functions
+w = w_grid[-2]
+h = h_grid[-2]
+
+# define data augmentation grid
+#TODO: add image quality compression here?
+transform_grid = ['none', 'horizontal_flip', 'rotate', 'shear', 'brightness_contrast',
+                  'hue_sat_value', 'safe_bbox_crop', 'flip_crop', 'affine', 'affine_sat',
+                  'affine_contrast', 'affine_crop', 'affine_sat_contrast']
+
+# define augmentations to run this training round
+transforms = transform_grid[0] # TODO loop through transform_grid
+
+# get training augmentation pipeline
+train_transform = train_augmentations(w=w, h=h, transforms=transforms)
+
+# define validation augmentation pipeline
 val_transform = A.Compose([
     ToTensorV2()
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
@@ -214,16 +222,10 @@ class DetectDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.image_infos)
 
-# set image size grid
-#TODO: determine if aspect ratio needs to change depending on model backbone
-w_grid = [408, 816, 1224, 1632, 2040]
-h_grid = [307, 614, 921, 1228, 1535]
 
 # load pytorch datasets
-#TODO: loop through height/width grids for image size
-# include a training run where train_ds transform=val_transform
-train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w_grid, h=h_grid, transform=train_transform)
-val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w_grid, h=h_grid, transform=val_transform)
+train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=train_transform)
+val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_transform)
 
 # generate smaller anchor boxes:
 # TODO: think about adjusting anchor sizes depending on input image size
@@ -236,14 +238,13 @@ roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_rat
 
 # define model
 def get_model(cnn_backbone, num_classes):
-    # generate smaller anchor boxes:
-    # TODO: think about adjusting anchor sizes depending on input image size
-    anchor_sizes = ((16,), (32,), (64,), (128,), (256,))
-    aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
-    anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
-
-    # feature map to perform RoI cropping
-    roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
+    """
+    function to load Faster-RCNN model with a specified backbone
+    :param cnn_backbone: options from backbone_grid identify different CNN backbone architectures
+    to load underneath the region proposal network
+    :param num_classes: number of classes in the model
+    :return: loaded model
+    """
 
     # initialize model by class
 
@@ -323,13 +324,14 @@ def get_model(cnn_backbone, num_classes):
 
 # backbone grid
 backbone_grid = ['resnet', 'vgg16', 'conv_s', 'conv_b', 'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
+backbone = backbone_grid[-1]
 
 # load model
 #TODO loop through backbone grid
-model = get_model(backbone_grid[i], num_classes).to(device)
+model = get_model(cnn_backbone=backbone, num_classes).to(device)
 params = [p for p in model.parameters() if p.requires_grad]
 
-# optimizer grid
+# optimizer options
 optim_dict = ["SGD", "Adam"]
 
 # starting learning rate grid
@@ -338,37 +340,86 @@ lr_grid = [0.001, 0.005, 0.01, 0.05, 0.10]
 # weight decay grid
 wd_grid = [0, 0.0001, 0.0005, 0.001, 0.005]
 
-optim_grid = np.array([(x, y) for x in lr_grid for y in wd_grid]).transpose()
+# load optimizer
+optim = "Adam"
+lr = lr_grid[2] #TODO: loop through lr_grid
+wd = wd_grid[2] #TODO: loop through wd_grid
+momentum = 0.9 # only need this for optimizer = SGD
 
 # load optimizer
-#TODO: loop through optim_grid
 if optim=="SGD":
-    optimizer = torch.optim.SGD(params, lr=optim_grid[0], momentum=momentum, weight_decay=optim_grid[1])
-    return optimizer
+    optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=wd)
 if optim=="Adam":
-    optimizer = torch.optim.Adam(params=params, lr=optim_grid[0], weight_decay=optim_grid[1])
+    optimizer = torch.optim.Adam(params=params, lr=lr, weight_decay=wd)
 
+# set learning rate scheduler
+#TODO: explore other lr schedulers
+lr_scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 
-# -- Data Processing / Augmentation Parameters
+# set number of epochs
+# TODO implement early stopping and increase number of epochs
+# look at end of training loop and set criteria based on change in val_loss over epochs, or implement function from skorch, pytorch-lightning, etc.
+n_epochs = 25
 
-# weighted random sampling: research a few different options for 3-4 total including no oversampling
-# image size: need to confirm if image size must be determined by backbone
-# image resolution - signal to noise ratio
+# set batch_size grid
+# TODO: need to test gradient accumulation and available memory in Ceres/Atlas
+batch_grid = [8, 16, 32, 64]
+batch_size = batch_grid[0]
 
+# set up class weights
+# TODO: introduce imbalance into dataset to create different weights
+s = dict(Counter(train_df['LabelName'])
+#TODO: is there a more elegant way to execute the next 4-6 lines?
+sdf = pd.DataFrame.from_dict(s, orient='index').reset_index()
+sdf.columns = ['LabelName', 'counts']
+sdf['weights'] = 1/sdf['counts']
+swts = dict(zip(sdf.LabelName, sdf.weights))
+train_unique = train_df.drop_duplicates(subset='filename', keep='first')
+sample_weights = train_unique.LabelName.map(swts).tolist()
 
-# -- Model backbones
-#TODO: read papers from pytoch pretrained models to determine which ones to try
+# load weighted random sampler
+sampler = WeightedRandomSampler(sample_weights, num_samples=len(train_unique), replacement=True)
 
-# resnet - as baseline comparable to previous versions
-# convnext - any version
-# vgg16 - may have too many parameters, but was the backbone used in the Faster-RCNN paper
-# efficientnet - try efficientnetV2-sm, efficientnet-b4
-# swin transformer
+# define dataloaders
+train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn,
+                          drop_last=True, sampler=sampler)
+# do not oversample for validation, just for training
+val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
 
+# make output directory and filepath
+#TODO: current format depends on models with the same backbone being initiated on different days
+output_path = "./minitrain/output/" + "fasterRCNN_" + backbone + "_" + time.strftime("%Y%m%d")\
+if not os.path.exists(output_path):
+    os.makedirs(output_path)
 
-# -- hyperparameters
-# starting learning rate
-# weight decay
-# momentum (not applicable to all optimzers)
-# optimizer: SGD, Adam
-# effective batch size
+# write txt file
+#TODO: put this inside a function or no?
+
+    """
+    write txt file to output dir that has run values for changeable hyperparameters:
+    - model backbone
+    - image size
+    - data augmentations and their ranges
+    - anchor box sizes (may not change this)
+    - optimizer
+    - starting learning rate
+    - weight decay
+    - learning rate scheduler and parameters
+    :return: txt file containing all values of changing arguments per model run
+    """
+# collect arguments in a dict
+model_args = {'backbone': backbone,
+              'image width': w,
+              'image height': h,
+              'data augmentations': transforms,
+              'anchor box sizes': anchor_sizes,
+              'optimizer': optim,
+              'starting lr': lr,
+              'weight decay': wd,
+              'lr_scheduler': lr_scheduler.__class__
+              }
+
+# write args to text file
+with open(output_path + 'model_args.txt', 'w') as f:
+    for key, value in model_args.items():
+        f.write('%s:%s\n' % (key, value))
