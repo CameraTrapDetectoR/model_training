@@ -25,7 +25,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from sklearn.model_selection import GridSearchCV
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from fasterRCNN.minitrain.data_augmentation import train_augmentation
+import fasterRCNN.minitrain.data_augmentation as data_aug
 
 from tqdm import tqdm
 from torchvision.models.detection.rpn import AnchorGenerator
@@ -148,7 +148,7 @@ transform_grid = ['none', 'horizontal_flip', 'rotate', 'shear', 'brightness_cont
 transforms = transform_grid[0] # TODO loop through transform_grid
 
 # get training augmentation pipeline
-train_transform = train_augmentations(w=w, h=h, transforms=transforms)
+train_transform = data_aug.train_augmentations(w=w, h=h, transforms=transforms)
 
 # define validation augmentation pipeline
 val_transform = A.Compose([

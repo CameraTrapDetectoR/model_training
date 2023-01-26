@@ -6,7 +6,7 @@ import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
 
-# t_pipeline = A.Compose([
+# train_transform = A.Compose([
 #     # A.HorizontalFlip(p=0.5),
 #     # A.Affine(rotate=(-30, 30), fit_output=True, p=0.3),
 #     # A.Affine(shear=(-20, 20), fit_output=True, p=0.3),
@@ -39,104 +39,104 @@ def train_augmentations(w, h, transforms):
     """
     # single transforms
     if transforms == 'horizontal_flip':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.HorizontalFlip(p=0.5),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'rotate':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(rotate=(-30, 30), fit_output=True, p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'shear':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(shear=(-30, 30), fit_output=True, p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'brightness_contrast':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.RandomBrightnessContrast(p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'hue_sat_value':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.HueSaturationValue(p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'safe_bbox_crop':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.5),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'flip_crop':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.HorizontalFlip(p=0.5),
             A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.5),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'affine':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(shear=(-30, 30), rotate=(-30,30), fit_output=True, p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'affine_sat':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(shear=(-30, 30), rotate=(-30,30), fit_output=True, p=0.4),
             A.HueSaturationValue(p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'affine_contrast':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(shear=(-30, 30), rotate=(-30,30), fit_output=True, p=0.4),
             A.RandomBrightnessContrast(p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'affine_crop':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(shear=(-30, 30), rotate=(-30,30), fit_output=True, p=0.4),
             A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.5),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
     if transforms == 'affine_sat_contrast':
-        t_pipeline = A.Compose([
+        train_transform = A.Compose([
             A.Affine(shear=(-30, 30), rotate=(-30,30), fit_output=True, p=0.4),
             A.HueSaturationValue(p=0.4),
             A.RandomBrightnessContrast(p=0.4),
             ToTensorV2()
         ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
         )
-        return t_pipeline
+        return train_transform
 
