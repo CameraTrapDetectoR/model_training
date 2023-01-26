@@ -25,18 +25,14 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from sklearn.model_selection import GridSearchCV
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-import fasterRCNN.minitrain.data_augmentation as data_aug
+from fasterRCNN.minitrain import data_prep
+from fasterRCNN.minitrain import model_support
+from fasterRCNN.minitrain.model_support import get_lr, create_checkpoint, save_checkpoint
 
 from tqdm import tqdm
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
-from torchvision.models.detection import FasterRCNN
-from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
-from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_ResNet50_FPN_V2_Weights
-from torchvision.models import vgg16_bn, VGG16_BN_Weights
-from torchvision.models import convnext_small, convnext_base, ConvNeXt_Small_Weights, ConvNeXt_Base_Weights
-from torchvision.models import swin_s, swin_b, Swin_S_Weights, Swin_B_Weights
-from torchvision.models import efficientnet_b4, efficientnet_v2_m, EfficientNet_B4_Weights, EfficientNet_V2_M_Weights
+
 
 from torchvision.transforms.functional import to_pil_image
 import random
@@ -128,6 +124,10 @@ val_df = df[df['filename'].isin(val_ids)].reset_index(drop=True)
 Counter(train_df['LabelName'])
 Counter(val_df['LabelName'])
 
+# write datasets to csv
+train_df.to_csv(output_path + "train_df.csv")
+val_df.to_csv(output_path + "val_df.csv")
+
 
 # set image size grid
 #TODO: determine if aspect ratio needs to change depending on model backbone
@@ -148,7 +148,7 @@ transform_grid = ['none', 'horizontal_flip', 'rotate', 'shear', 'brightness_cont
 transforms = transform_grid[0] # TODO loop through transform_grid
 
 # get training augmentation pipeline
-train_transform = data_aug.train_augmentations(w=w, h=h, transforms=transforms)
+train_transform = data_prep.train_augmentations(w=w, h=h, transforms=transforms)
 
 # define validation augmentation pipeline
 val_transform = A.Compose([
@@ -156,79 +156,16 @@ val_transform = A.Compose([
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 
-# Create PyTorch dataset
-class DetectDataset(torch.utils.data.Dataset):
-    """
-    Builds dataset with images and their respective targets, bounding boxes and class labels.
-    DF must include: filename containing pathway to individual images; bbox ccordinates in format proportional to
-    image size (i.e. all bbox coordinates [0,1]) with xmin, ymin corresponding to upper left corner and
-    xmax, ymax corresponding to lower right corner.
-    Images are resized, channels converted, and augmented according to data augmentation pipelines defined below.
-    Bboxes also undergo corresponding data augmentation.
-    Each filename corresponds to a 'target' dict of bboxes and labels.
-    Images and targets are returned as Tensors.
-    """
-
-    def __init__(self, df, image_dir, w, h, transform):
-        self.image_dir = image_dir
-        self.df = df
-        self.image_infos = df.filename.unique()
-        self.w = w
-        self.h = h
-        self.transform = transform
-
-    def __getitem__(self, item):
-        # create image id
-        image_id = self.image_infos[item]
-        # create full path to open each image file
-        img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
-        # open image
-        img = cv2.imread(img_path)
-        # reformat color channels
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # resize image so bboxes can also be converted
-        img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32) / 255.
-        # img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
-        # img = np.array(img, dtype="float32")/255.
-        # filter df rows for img
-        df = self.df
-        data = df[df['filename'] == image_id]
-        # extract label names
-        labels = data['LabelName'].values.tolist()
-        # extract bbox coordinates
-        data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
-        # convert to absolute values for model input
-        data[:, [0, 2]] *= self.w
-        data[:, [1, 3]] *= self.h
-        # convert coordinates to list
-        boxes = data.tolist()
-        # convert bboxes and labels to a tensor dictionary
-        target = {
-            'boxes': boxes,
-            'labels': torch.tensor([label2target[i] for i in labels]).long()
-        }
-        # apply data augmentation
-        if self.transform is not None:
-            augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
-            img = augmented['image']
-            target['boxes'] = augmented['bboxes']
-        target['boxes'] = torch.tensor(target['boxes']).float()  # ToTensorV2() isn't working on bboxes
-        return img, target
-
-    def collate_fn(self, batch):
-        return tuple(zip(*batch))
-
-    def __len__(self):
-        return len(self.image_infos)
-
-
 # load pytorch datasets
-train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=train_transform)
-val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_transform)
+train_ds = data_prep.DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=train_transform)
+val_ds = data_prep.DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_transform)
+
+# backbone grid
+backbone_grid = ['resnet', 'vgg16', 'conv_s', 'conv_b', 'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
+cnn_backbone = backbone_grid[-2]
 
 # generate smaller anchor boxes:
-# TODO: think about adjusting anchor sizes depending on input image size
+# TODO: think about adjusting anchor sizes depending on input image size or model backbone
 anchor_sizes = ((16,), (32,), (64,), (128,), (256,), (512,))
 aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
 anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
@@ -236,139 +173,48 @@ anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 # feature map to perform RoI cropping
 roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
 
-# define model
-def get_model(cnn_backbone, num_classes):
-    """
-    function to load Faster-RCNN model with a specified backbone
-    :param cnn_backbone: options from backbone_grid identify different CNN backbone architectures
-    to load underneath the region proposal network
-    :param num_classes: number of classes in the model
-    :return: loaded model
-    """
-
-    # initialize model by class
-
-    if cnn_backbone == 'resnet':
-        model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT', rpn_anchor_generator=anchor_gen)
-        #TODO: debug this code
-        in_features = model.roi_heads.box_predictor.cls_score.in_features
-        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-        return model
-
-    if cnn_backbone == 'vgg16':
-        backbone = vgg16_bn(weights='DEFAULT').features
-        backbone.out_channels = 512
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'conv_s':
-        backbone = convnext_small(weights='DEFAULT').features
-        #TODO: determine which ConvNext model to use
-        backbone.out_channels = 768
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'conv_b':
-        backbone = convnext_base(weights='DEFAULT').features
-        #TODO: determine which ConvNext model to use
-        backbone.out_channels = 1024
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'eff_b4':
-        backbone = efficientnet_b4(weights='DEFAULT').features
-        #TODO: verify out channels
-        backbone.out_channels = 448
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'eff_v2m':
-        backbone = efficientnet_v2_m(weights='DEFAULT').features
-        #TODO: determine which ConvNext model to use
-        backbone.out_channels = 512
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'swin_s':
-        backbone = swin_s(weights='DEFAULT').features
-        backbone.out_channels = 768
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'swin_b':
-        backbone = swin_b(weights='DEFAULT').features
-        backbone.out_channels = 1024
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-# backbone grid
-backbone_grid = ['resnet', 'vgg16', 'conv_s', 'conv_b', 'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
-backbone = backbone_grid[-1]
-
 # load model
-#TODO loop through backbone grid
-model = get_model(cnn_backbone=backbone, num_classes).to(device)
+model = model_support.get_model(cnn_backbone=cnn_backbone, num_classes=num_classes).to(device)
 params = [p for p in model.parameters() if p.requires_grad]
 
 # optimizer options
-optim_dict = ["SGD", "Adam"]
+optim_dict = ["SGD", "Adam", "AdamW"]
 
 # starting learning rate grid
 lr_grid = [0.001, 0.005, 0.01, 0.05, 0.10]
 
 # weight decay grid
-wd_grid = [0, 0.0001, 0.0005, 0.001, 0.005]
+wd_grid = [0, 0.0005, 0.001, 0.005, 0.01]
 
 # load optimizer
-optim = "Adam"
+optim = "AdamW"
 lr = lr_grid[2] #TODO: loop through lr_grid
 wd = wd_grid[2] #TODO: loop through wd_grid
 momentum = 0.9 # only need this for optimizer = SGD
 
 # load optimizer
-if optim=="SGD":
-    optimizer = torch.optim.SGD(params, lr=lr, momentum=momentum, weight_decay=wd)
-if optim=="Adam":
-    optimizer = torch.optim.Adam(params=params, lr=lr, weight_decay=wd)
+optimizer = get_optimizer(optim, params, lr, wd, momentum)
 
 # set learning rate scheduler
 #TODO: explore other lr schedulers
 lr_scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 
 # set number of epochs
-# TODO implement early stopping and increase number of epochs
+# TODO implement early stopping and increase number of epochs?
 # look at end of training loop and set criteria based on change in val_loss over epochs, or implement function from skorch, pytorch-lightning, etc.
-n_epochs = 25
+n_epochs = 30
 
 # set batch_size grid
 # TODO: need to test gradient accumulation and available memory in Ceres/Atlas
-batch_grid = [8, 16, 32, 64]
-batch_size = batch_grid[0]
+batch_grid = [16, 32, 64]
+batch_size = batch_grid[2]
+
+# set gradient accumulation
+grad_accumulation = 1
 
 # set up class weights
 # TODO: introduce imbalance into dataset to create different weights
-s = dict(Counter(train_df['LabelName'])
+s = dict(Counter(train_df['LabelName']))
 #TODO: is there a more elegant way to execute the next 4-6 lines?
 sdf = pd.DataFrame.from_dict(s, orient='index').reset_index()
 sdf.columns = ['LabelName', 'counts']
@@ -388,7 +234,7 @@ val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.colla
 
 # make output directory and filepath
 #TODO: current format depends on models with the same backbone being initiated on different days
-output_path = "./minitrain/output/" + "fasterRCNN_" + backbone + "_" + time.strftime("%Y%m%d")\
+output_path = "./fasterRCNN/minitrain/output/" + "fasterRCNN_" + backbone + "_" + time.strftime("%Y%m%d")
 if not os.path.exists(output_path):
     os.makedirs(output_path)
 
@@ -420,6 +266,99 @@ model_args = {'backbone': backbone,
               }
 
 # write args to text file
-with open(output_path + 'model_args.txt', 'w') as f:
+with open(output_path + '/model_args.txt', 'w') as f:
     for key, value in model_args.items():
         f.write('%s:%s\n' % (key, value))
+
+# define starting weights, starting loss
+best_model_wts = copy.deepcopy(model.state_dict())
+best_loss = float('inf')
+
+# create empty list to save losses
+loss_history = {
+    'train': [],
+    'val': []
+}
+
+# train the model
+for epoch in range(num_epochs):
+    # set learning rate and print epoch number
+    current_lr = get_lr(optimizer)
+    print('Epoch {}/{}, current lr={}'.format(epoch + 1, num_epochs, current_lr))
+
+    # training pass
+    model.train()
+    running_loss = 0.0
+    for batch_idx, (images, targets) in enumerate(tqdm(train_loader)):
+        # send data to device
+        images = list(image.to(device) for image in images)
+        targets = [{'boxes':t['boxes'].to(device), 'labels':t['labels'].to(device)} for t in targets]
+
+        # forward pass
+        losses = model(images, targets)
+        loss = sum(loss for loss in losses.values())
+
+        # normalize loss to account for batch accumulation
+        loss = loss / grad_accumulation
+
+        # backward pass
+        loss.backward()
+
+        # optimizer step every x=grad_accumulation batches
+        if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
+            optimizer.step()
+            optimizer.zero_grad()
+            print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
+
+        # update loss
+        running_loss += loss.item()
+
+    # record training loss
+    loss_history['train'].append(running_loss/len(train_loader))
+    print('train loss: %.6f' % (running_loss / len(train_loader)))
+
+    # validation pass
+    model.eval()
+    running_val_loss = 0.0
+    with torch.no_grad():
+        for batch_idx, (images, targets) in enumerate(tqdm(val_loader)):
+            model.train() # obtain losses without defining forward method
+            # move to device
+            images = list(image.to(device) for image in images)
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+            # collect losses
+            val_losses = model(images, targets)
+            val_loss = sum(loss for loss in val_losses.values())
+
+            # normalize loss based on gradient accumulation
+            val_loss = val_loss / grad_accumulation
+            if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
+                optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
+
+            # update loss
+            running_val_loss += float(val_loss)
+
+        # record validation loss
+        val_loss = running_val_loss / len(val_loader)
+        loss_history['val'].append(running_val_loss / len(val_loader))
+        print('val loss: %.6f' % (running_val_loss / len(val_loader)))
+
+    # compare validation loss
+    if val_loss < best_loss:
+        # update best loss
+        best_loss = val_loss
+        # update model weights
+        best_model_wts = copy.deepcopy(model.state_dict())
+
+    # adjust learning rate
+    lr_scheduler.step(val_loss)
+    # load best model weights if current epoch did not produce best weights
+    if current_lr != get_lr(optimizer):
+        model.load_state_dict(best_model_wts)
+
+    # save model state
+    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target)
+    checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
+    save_checkpoint(checkpoint, checkpoint_file)
