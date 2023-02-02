@@ -373,7 +373,7 @@ class DetectDataset(torch.utils.data.Dataset):
         # apply data augmentation
         if self.transform is not None:
             augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
-            img = augmented['image']
+            img = torch.from_numpy(augmented['image'])
             target['boxes'] = augmented['bboxes']
         target['boxes'] = torch.tensor(target['boxes']).float()  # ToTensorV2() isn't working on bboxes
         return img, target

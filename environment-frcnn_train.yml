@@ -15,11 +15,12 @@ dependencies:
   - opencv
   - tqdm
   - albumentations
+  - ipykernel # for running jupyter notebook
 
   # model packages
-  - pytorch::pytorch=1.13.0
-  - pytorch::torchvision=0.14.1 # support for new swin transformer backbones
-  - conda-forge::cudatoolkit=10.0 # latest version on Ceres
+  - pytorch::pytorch=1.12
+  - pytorch::torchvision=0.13
+  - conda-forge::cudatoolkit=11.3 # latest version on Ceres
   - conda-forge::cudatoolkit=11.2 # latest version on Atlas
   - conda-forge::cudnn=8.2  # latest version on Ceres
 

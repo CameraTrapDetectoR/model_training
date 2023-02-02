@@ -2,30 +2,16 @@
 supporting functions for data augmentation in minitraining
 """
 
+import os
+import numpy as np
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 import torch
+import cv2
+from torch.utils.data import Dataset
 
-# train_transform = A.Compose([
-#     # A.HorizontalFlip(p=0.5),
-#     # A.Affine(rotate=(-30, 30), fit_output=True, p=0.3),
-#     # A.Affine(shear=(-20, 20), fit_output=True, p=0.3),
-#     # A.RandomBrightnessContrast(p=0.3),
-#     # A.HueSaturationValue(p=0.3), # loop through hue_sat grid for all parameter values
-#     # A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.5),
-#     ToTensorV2()
-# ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
-# )
-#
-# # define grids of augmentation options
-# transform_grid = ['none', 'horizontal_flip', 'rotate', 'shear', 'brightness_contrast',
-#                   'hue_sat_value', 'safe_bbox_crop', 'affine_only', 'flip_crop', ]
-# define data augmentation pipelines
 
-# grids of augmentation parameter values
-# affine_grid = np.array([(x, y) for x in range(0, 35, 10) for y in range(0, 35, 10)]).transpose()
-# hue_sat_grid = list(range(0, 35, 10))
-
+# define data augmentation for train_df
 def train_augmentations(w, h, transforms):
     """
     return different data augmentation pipelines based on transformations
@@ -38,6 +24,13 @@ def train_augmentations(w, h, transforms):
 
     """
     # single transforms
+    if transforms == 'none':
+        train_transform = A.Compose([
+            ToTensorV2()
+        ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
+        )
+        return train_transform
+
     if transforms == 'horizontal_flip':
         train_transform = A.Compose([
             A.HorizontalFlip(p=0.5),
@@ -141,7 +134,6 @@ def train_augmentations(w, h, transforms):
         return train_transform
 
 # Create PyTorch dataset
-# TODO figure out how to import dataset from here so it's not on main page
 class DetectDataset(torch.utils.data.Dataset):
     """
     Builds dataset with images and their respective targets, bounding boxes and class labels.

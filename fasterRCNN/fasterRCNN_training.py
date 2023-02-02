@@ -26,7 +26,7 @@ if local:
     os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
 else:
     IMAGE_ROOT = "/90daydata/cameratrapdetector/fasterrcnn"
-    os.chdir('/projects/cameratrapdetector')
+    os.chdir('/project/cameratrapdetector')
 
 # Import packages
 exec(open('./fasterRCNN/fasterRCNN_imports.py').read())

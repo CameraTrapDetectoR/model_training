@@ -10,37 +10,22 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import math
-
 
 import torch
 import torch.cuda
-from PIL import Image, ImageFile, ImageDraw, ImageFont
+from PIL import ImageFile
 import time
 import albumentations as A
 import cv2
 from albumentations.pytorch.transforms import ToTensorV2
-import matplotlib.pylab as plt
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-from sklearn.model_selection import GridSearchCV
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
-from fasterRCNN.minitrain import data_prep
-from fasterRCNN.minitrain import model_support
-from fasterRCNN.minitrain.model_support import get_lr, create_checkpoint, save_checkpoint
 
 from tqdm import tqdm
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
 
-
-from torchvision.transforms.functional import to_pil_image
-import random
-from torchvision.ops import nms, batched_nms
-from torchvision.utils import draw_bounding_boxes
-from torchmetrics.detection.mean_ap import MeanAveragePrecision
-from pprint import pprint
-import matplotlib.pyplot as plt
+# from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 # determine operating system, for batch vs. local jobs
 
@@ -56,7 +41,10 @@ if local:
     os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
 else:
     IMAGE_ROOT = "/90daydata/cameratrapdetector/minitrain"
-    os.chdir('/projects/cameratrapdetector')
+    os.chdir('/project/cameratrapdetector')
+
+from minitrain import data_prep, model_support
+from minitrain.model_support import write_args, get_optimizer, get_lr, create_checkpoint, save_checkpoint
 
 # set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -121,22 +109,17 @@ train_df = df[df['filename'].isin(train_ids)].reset_index(drop=True)
 val_df = df[df['filename'].isin(val_ids)].reset_index(drop=True)
 
 # Review splits
-Counter(train_df['LabelName'])
-Counter(val_df['LabelName'])
-
-# write datasets to csv
-train_df.to_csv(output_path + "train_df.csv")
-val_df.to_csv(output_path + "val_df.csv")
-
+# Counter(train_df['LabelName'])
+# Counter(val_df['LabelName'])
 
 # set image size grid
 #TODO: determine if aspect ratio needs to change depending on model backbone
-w_grid = [408, 816, 1224, 1632, 2040]
-h_grid = [307, 614, 921, 1228, 1535]
+w_grid = [408, 510, 612, 816, 1224]
+h_grid = [307, 384, 460, 614, 921]
 
 # Define width and height OUTSIDE any functions
-w = w_grid[-2]
-h = h_grid[-2]
+w = w_grid[0]
+h = h_grid[0]
 
 # define data augmentation grid
 #TODO: add image quality compression here?
@@ -145,7 +128,7 @@ transform_grid = ['none', 'horizontal_flip', 'rotate', 'shear', 'brightness_cont
                   'affine_contrast', 'affine_crop', 'affine_sat_contrast']
 
 # define augmentations to run this training round
-transforms = transform_grid[0] # TODO loop through transform_grid
+transforms = transform_grid[-1] # TODO loop through transform_grid
 
 # get training augmentation pipeline
 train_transform = data_prep.train_augmentations(w=w, h=h, transforms=transforms)
@@ -156,17 +139,84 @@ val_transform = A.Compose([
 ], bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),
 )
 
+# Create PyTorch dataset
+class DetectDataset(torch.utils.data.Dataset):
+    """
+    Builds dataset with images and their respective targets, bounding boxes and class labels.
+    DF must include: filename containing pathway to individual images; bbox ccordinates in format proportional to
+    image size (i.e. all bbox coordinates [0,1]) with xmin, ymin corresponding to upper left corner and
+    xmax, ymax corresponding to lower right corner.
+    Images are resized, channels converted, and augmented according to data augmentation pipelines defined below.
+    Bboxes also undergo corresponding data augmentation.
+    Each filename corresponds to a 'target' dict of bboxes and labels.
+    Images and targets are returned as Tensors.
+    """
+
+    def __init__(self, df, image_dir, w, h, transform):
+        self.image_dir = image_dir
+        self.df = df
+        self.image_infos = df.filename.unique()
+        self.w = w
+        self.h = h
+        self.transform = transform
+
+    def __getitem__(self, item):
+        # create image id
+        image_id = self.image_infos[item]
+        # create full path to open each image file
+        img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
+        # open image
+        img = cv2.imread(img_path)
+        # reformat color channels
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # resize image so bboxes can also be converted
+        img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
+        img = img.astype(np.float32) / 255.
+        # img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
+        # img = np.array(img, dtype="float32")/255.
+        # filter df rows for img
+        df = self.df
+        data = df[df['filename'] == image_id]
+        # extract label names
+        labels = data['LabelName'].values.tolist()
+        # extract bbox coordinates
+        data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
+        # convert to absolute values for model input
+        data[:, [0, 2]] *= self.w
+        data[:, [1, 3]] *= self.h
+        # convert coordinates to list
+        boxes = data.tolist()
+        # convert bboxes and labels to a tensor dictionary
+        target = {
+            'boxes': boxes,
+            'labels': torch.tensor([label2target[i] for i in labels]).long()
+        }
+        # apply data augmentation
+        if self.transform is not None:
+            augmented = self.transform(image=img, bboxes=target['boxes'], labels=labels)
+            img = (augmented['image'])
+            target['boxes'] = augmented['bboxes']
+        target['boxes'] = torch.tensor(target['boxes']).float()  # ToTensorV2() isn't working on bboxes
+        return img, target
+
+    def collate_fn(self, batch):
+        return tuple(zip(*batch))
+
+    def __len__(self):
+        return len(self.image_infos)
+
 # load pytorch datasets
-train_ds = data_prep.DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=train_transform)
-val_ds = data_prep.DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_transform)
+train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=train_transform)
+val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_transform)
 
 # backbone grid
+#TODO revisit these backbone choices; troubleshoot connecting CNN to RPN
 backbone_grid = ['resnet', 'vgg16', 'conv_s', 'conv_b', 'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
-cnn_backbone = backbone_grid[-2]
+cnn_backbone = backbone_grid[0]
 
 # generate smaller anchor boxes:
 # TODO: think about adjusting anchor sizes depending on input image size or model backbone
-anchor_sizes = ((16,), (32,), (64,), (128,), (256,), (512,))
+anchor_sizes = ((32,), (64,), (128,), (256,), (512,)) # ((16,), (32,), (64,), (128,), (256,))
 aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
 anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 
@@ -174,6 +224,7 @@ anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
 
 # load model
+#TODO load model w/o weights and try again
 model = model_support.get_model(cnn_backbone=cnn_backbone, num_classes=num_classes).to(device)
 params = [p for p in model.parameters() if p.requires_grad]
 
@@ -202,15 +253,25 @@ lr_scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 # set number of epochs
 # TODO implement early stopping and increase number of epochs?
 # look at end of training loop and set criteria based on change in val_loss over epochs, or implement function from skorch, pytorch-lightning, etc.
-n_epochs = 30
+num_epochs = 30
 
 # set batch_size grid
 # TODO: need to test gradient accumulation and available memory in Ceres/Atlas
-batch_grid = [16, 32, 64]
-batch_size = batch_grid[2]
+batch_grid = [16, 32, 64, 80]
+batch_size = batch_grid[1]
+# make copy of batch_size for gradient accumulation
+batch_size_org = batch_size
 
-# set gradient accumulation
-grad_accumulation = 1
+# boolean to use gradient accumulation
+use_grad = True
+
+# set denominator if using gradient accumulation
+if use_grad:
+    # set number of gradients to accumulate before updating weights
+    grad_accumulation = 8
+    # effective batch size = batch_size * grad_accumulation
+    batch_size = batch_size_org // grad_accumulation
+
 
 # set up class weights
 # TODO: introduce imbalance into dataset to create different weights
@@ -234,41 +295,16 @@ val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.colla
 
 # make output directory and filepath
 #TODO: current format depends on models with the same backbone being initiated on different days
-output_path = "./fasterRCNN/minitrain/output/" + "fasterRCNN_" + backbone + "_" + time.strftime("%Y%m%d")
+output_path = "./minitrain/output/" + "fasterRCNN_" + cnn_backbone + "_" + time.strftime("%Y%m%d") + "/"
 if not os.path.exists(output_path):
     os.makedirs(output_path)
 
-# write txt file
-#TODO: put this inside a function or no?
+# write datasets to csv
+train_df.to_csv(output_path + "train_df.csv")
+val_df.to_csv(output_path + "val_df.csv")
 
-    """
-    write txt file to output dir that has run values for changeable hyperparameters:
-    - model backbone
-    - image size
-    - data augmentations and their ranges
-    - anchor box sizes (may not change this)
-    - optimizer
-    - starting learning rate
-    - weight decay
-    - learning rate scheduler and parameters
-    :return: txt file containing all values of changing arguments per model run
-    """
-# collect arguments in a dict
-model_args = {'backbone': backbone,
-              'image width': w,
-              'image height': h,
-              'data augmentations': transforms,
-              'anchor box sizes': anchor_sizes,
-              'optimizer': optim,
-              'starting lr': lr,
-              'weight decay': wd,
-              'lr_scheduler': lr_scheduler.__class__
-              }
-
-# write args to text file
-with open(output_path + '/model_args.txt', 'w') as f:
-    for key, value in model_args.items():
-        f.write('%s:%s\n' % (key, value))
+# write test arguments to file
+write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size_org, optim, lr, wd, lr_scheduler, output_path)
 
 # define starting weights, starting loss
 best_model_wts = copy.deepcopy(model.state_dict())
@@ -298,15 +334,23 @@ for epoch in range(num_epochs):
         losses = model(images, targets)
         loss = sum(loss for loss in losses.values())
 
-        # normalize loss to account for batch accumulation
-        loss = loss / grad_accumulation
+        if use_grad:
+            # normalize loss to account for batch accumulation
+            loss = loss / grad_accumulation
+            # backward pass
+            loss.backward()
+            # optimizer step every x=grad_accumulation batches
+            if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
-        # backward pass
-        loss.backward()
-
-        # optimizer step every x=grad_accumulation batches
-        if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
+        else:
+            # backward pass
+            loss.backward()
+            # optimizer step
             optimizer.step()
+            # reset gradients
             optimizer.zero_grad()
             print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
@@ -331,9 +375,16 @@ for epoch in range(num_epochs):
             val_losses = model(images, targets)
             val_loss = sum(loss for loss in val_losses.values())
 
-            # normalize loss based on gradient accumulation
-            val_loss = val_loss / grad_accumulation
-            if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
+            if use_grad:
+                # normalize loss based on gradient accumulation
+                val_loss = val_loss / grad_accumulation
+                if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
+                    # reset gradients
+                    optimizer.zero_grad()
+                    print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
+
+            else:
+                # reset gradients
                 optimizer.zero_grad()
                 print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
 
@@ -359,6 +410,6 @@ for epoch in range(num_epochs):
         model.load_state_dict(best_model_wts)
 
     # save model state
-    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target)
+    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target, batch_size)
     checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
