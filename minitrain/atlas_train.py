@@ -33,6 +33,7 @@ from torchvision.models import efficientnet_b4, efficientnet_v2_m, EfficientNet_
 from tqdm import tqdm
 from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
+from datetime import timedelta
 
 # from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
@@ -357,7 +358,8 @@ val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_
 
 # backbone grid
 #TODO revisit these backbone choices; troubleshoot connecting CNN to RPN
-backbone_grid = ['resnet', 'vgg16', 'conv_s', 'conv_b', 'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
+backbone_grid = ['resnet', 'resnet_nofeatures', 'vgg16', 'conv_s', 'conv_b',
+                 'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
 cnn_backbone = backbone_grid[0]
 
 # generate smaller anchor boxes:
@@ -392,9 +394,14 @@ def get_model(cnn_backbone, num_classes):
 
     if cnn_backbone == 'resnet':
         model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT')
-        #TODO: debug this code
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+        return model
+
+    if cnn_backbone == 'resnet_nofeatures':
+        model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT')
+        # in_features = model.roi_heads.box_predictor.cls_score.in_features
+        # model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         return model
 
     if cnn_backbone == 'vgg16':
@@ -572,7 +579,7 @@ def write_args(cnn_backbone, w, h, unbalanced, transforms, anchor_sizes, batch_s
     # collect arguments in a dict
     model_args = {'backbone': cnn_backbone,
                   'image width': w,
-                  'image height': h
+                  'image height': h,
                   'unbalanced': unbalanced,
                   'data augmentations': transforms,
                   'anchor box sizes': anchor_sizes,
@@ -597,7 +604,7 @@ def get_lr(optimizer):
         return param_group['lr']
 
 # define checkpoint functions
-def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes,label2target):
+def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes,label2target, elapsed):
     checkpoint = {'state_dict': model.state_dict(),
                   'optimizer': optimizer.state_dict(),
                   'epoch': epoch + 1,
@@ -607,7 +614,8 @@ def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_
                   'best_loss': best_loss,
                   'model_type': model_type,
                   'num_classes': num_classes,
-                  'label2target': label2target}
+                  'label2target': label2target,
+                  'training_time': elapsed}
     return checkpoint
 
 
@@ -628,6 +636,8 @@ loss_history = {
 
 # train the model
 for epoch in range(num_epochs):
+    # start time
+    t_start = time.time()
     # set learning rate and print epoch number
     current_lr = get_lr(optimizer)
     print('Epoch {}/{}, current lr={}'.format(epoch + 1, num_epochs, current_lr))
@@ -719,7 +729,12 @@ for epoch in range(num_epochs):
     if current_lr != get_lr(optimizer):
         model.load_state_dict(best_model_wts)
 
+    # calculate training time per epoch
+    elapsed = time.time() - t_start
+    elapsed = str(timedelta(seconds=elapsed))
+
     # save model state
-    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes, label2target)
+    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history,
+                                   best_loss, model_type, num_classes, label2target, elapsed)
     checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
