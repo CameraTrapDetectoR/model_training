@@ -66,6 +66,7 @@ model_type = 'species'
 
 # load df
 df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv")
+df['bbox.area'] = (df['XMax'] - df['XMin']) * (df['YMax'] - df['YMin'])
 
 # update fox labels
 df.filename = df.filename.str.replace("Cascade_Red_Fox", "Red_Fox")
@@ -78,9 +79,9 @@ df = df[df['filename'].isin(extant)]
 # swap bbox coordinates if needed
 df['YMin_org'] = df['YMin']
 df['YMax_org'] = df['YMax']
-df.drop(['YMax', 'YMin'], axis=1, inplace=True)
 df['YMax'] = np.where(df['bbox.origin'] == 'LL', (1 - df['YMin_org']), df['YMax_org'])
 df['YMin'] = np.where(df['bbox.origin'] == 'LL', (1 - df['YMax_org']), df['YMin_org'])
+df.drop(['YMax', 'YMin'], axis=1, inplace=True)
 
 # update column names for common name
 df['common.name_org'] = df['common.name']
@@ -362,10 +363,10 @@ backbone_grid = ['resnet', 'resnet_nofeatures', 'vgg16', 'conv_s', 'conv_b',
                  'eff_b4', 'eff_v2m', 'swin_s', 'swin_b']
 cnn_backbone = backbone_grid[0]
 
-# generate smaller anchor boxes:
-# TODO: think about adjusting anchor sizes depending on input image size or model backbone
-anchor_sizes = ((32,), (64,), (128,), (256,), (512,)) # ((16,), (32,), (64,), (128,), (256,))
-aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
+# generate anchor boxes based on image size:
+# TODO: think about adjusting anchor sizes depending on model backbone
+anchor_sizes = ((16, ), (32,), (64,), (128,), (256,), (512,)) # ((16,), (32,), (64,), (128,), (256,))
+aspect_ratios = ((0.5, 0.67, 1.0, 1.33, 2.0),) * len(anchor_sizes)
 anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 
 # feature map to perform RoI cropping
@@ -373,7 +374,7 @@ roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_rat
 
 # define model
 #TODO: need to research specific implementation of each backbone onto Faster-RCNN
-def get_model(cnn_backbone, num_classes):
+def get_model(cnn_backbone, num_classes, anchor_gen):
     """
     function to load Faster-RCNN model with a specified backbone
     :param cnn_backbone: options from backbone_grid identify different CNN backbone architectures
@@ -381,11 +382,6 @@ def get_model(cnn_backbone, num_classes):
     :param num_classes: number of classes in the model
     :return: loaded model
     """
-    # generate smaller anchor boxes:
-    # TODO: think about adjusting anchor sizes depending on input image size or model backbone
-    anchor_sizes = ((16,), (32,), (64,), (128,), (256,), (512,))
-    aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
-    anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 
     # feature map to perform RoI cropping
     roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
@@ -394,6 +390,8 @@ def get_model(cnn_backbone, num_classes):
 
     if cnn_backbone == 'resnet':
         model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT')
+        # update anchor boxes
+        model.rpn.anchor_generator = anchor_gen
         in_features = model.roi_heads.box_predictor.cls_score.in_features
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         return model
@@ -469,7 +467,7 @@ def get_model(cnn_backbone, num_classes):
 
 # load model
 #TODO load model w/o weights and try again
-model = get_model(cnn_backbone=cnn_backbone, num_classes=num_classes).to(device)
+model = get_model(cnn_backbone=cnn_backbone, num_classes=num_classes, anchor_gen=anchor_gen).to(device)
 params = [p for p in model.parameters() if p.requires_grad]
 
 # optimizer options
