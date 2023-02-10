@@ -4,4 +4,3 @@ Current iterations of all CameraTrapDetectoR taxonomic models are Faster-RCNN de
 
 YOLO algorithm under development
 
-
