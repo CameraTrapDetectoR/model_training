@@ -1,0 +1,26 @@
+name: FasterRCNN-train
+
+channels:
+  - conda-forge
+  - pytorch
+
+dependencies:
+  # support packages
+  - python=3.9
+  - Pillow=9.4.0
+  - numpy
+  - matplotlib
+  - pandas
+  - scikit-learn
+  - opencv
+  - tqdm
+  - albumentations
+  - ipykernel # for running jupyter notebook
+
+  # model packages
+  - pytorch::pytorch=1.12
+  - pytorch::torchvision=0.13
+  - conda-forge::cudatoolkit=11.3 # latest version on Ceres
+  - conda-forge::cudatoolkit=11.2 # latest version on Atlas
+  - conda-forge::cudnn=8.2  # latest version on Ceres
+
