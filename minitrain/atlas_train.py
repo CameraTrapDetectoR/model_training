@@ -31,7 +31,7 @@ from torchvision.models import convnext_small, convnext_base, ConvNeXt_Small_Wei
 from torchvision.models import swin_s, swin_b, Swin_S_Weights, Swin_B_Weights
 from torchvision.models import efficientnet_b4, efficientnet_v2_m, EfficientNet_B4_Weights, EfficientNet_V2_M_Weights
 from tqdm import tqdm
-from torchvision.models.detection.rpn import AnchorGenerator
+from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
 from datetime import timedelta
 
@@ -79,9 +79,9 @@ df = df[df['filename'].isin(extant)]
 # swap bbox coordinates if needed
 df['YMin_org'] = df['YMin']
 df['YMax_org'] = df['YMax']
+df.drop(['YMax', 'YMin'], axis=1, inplace=True)
 df['YMax'] = np.where(df['bbox.origin'] == 'LL', (1 - df['YMin_org']), df['YMax_org'])
 df['YMin'] = np.where(df['bbox.origin'] == 'LL', (1 - df['YMax_org']), df['YMin_org'])
-df.drop(['YMax', 'YMin'], axis=1, inplace=True)
 
 # update column names for common name
 df['common.name_org'] = df['common.name']
@@ -144,8 +144,8 @@ w_grid = [408, 510, 612, 816, 1224]
 h_grid = [307, 384, 460, 614, 921]
 
 # Define width and height OUTSIDE any functions
-w = w_grid[0]
-h = h_grid[0]
+w = w_grid[-1]
+h = h_grid[-1]
 
 # define data augmentation grid
 #TODO: add image quality compression here?
@@ -365,8 +365,8 @@ cnn_backbone = backbone_grid[0]
 
 # generate anchor boxes based on image size:
 # TODO: think about adjusting anchor sizes depending on model backbone
-anchor_sizes = ((16, ), (32,), (64,), (128,), (256,), (512,)) # ((16,), (32,), (64,), (128,), (256,))
-aspect_ratios = ((0.5, 0.67, 1.0, 1.33, 2.0),) * len(anchor_sizes)
+anchor_sizes = ((32,), (64,), (128,), (256,), (512,)) # ((16,), (32,), (64,), (128,), (256,))
+aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
 anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 
 # feature map to perform RoI cropping
@@ -396,11 +396,6 @@ def get_model(cnn_backbone, num_classes, anchor_gen):
         model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
         return model
 
-    if cnn_backbone == 'resnet_nofeatures':
-        model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT')
-        # in_features = model.roi_heads.box_predictor.cls_score.in_features
-        # model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-        return model
 
     if cnn_backbone == 'vgg16':
         backbone = vgg16_bn(weights='DEFAULT').features
@@ -470,20 +465,12 @@ def get_model(cnn_backbone, num_classes, anchor_gen):
 model = get_model(cnn_backbone=cnn_backbone, num_classes=num_classes, anchor_gen=anchor_gen).to(device)
 params = [p for p in model.parameters() if p.requires_grad]
 
-# optimizer options
-optim_dict = ["SGD", "Adam", "AdamW"]
-
 # starting learning rate grid
 lr_grid = [0.001, 0.005, 0.01, 0.05, 0.10]
 
 # weight decay grid
 wd_grid = [0, 0.0005, 0.001, 0.005, 0.01]
 
-# load optimizer
-optim = "AdamW"
-lr = lr_grid[2] #TODO: loop through lr_grid
-wd = wd_grid[2] #TODO: loop through wd_grid
-momentum = 0.9 # only need this for optimizer = SGD
 
 # define optimizer method
 def get_optimizer(optim, params, lr, wd, momentum):
@@ -497,12 +484,7 @@ def get_optimizer(optim, params, lr, wd, momentum):
         optimizer = torch.optim.AdamW(params=params, lr=lr, weight_decay=wd)
         return optimizer
 
-# load optimizer
-optimizer = get_optimizer(optim, params, lr, wd, momentum)
 
-# set learning rate scheduler
-#TODO: explore other lr schedulers
-lr_scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 
 # set number of epochs
 # TODO implement early stopping and increase number of epochs?
@@ -547,17 +529,6 @@ train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.c
 # do not oversample for validation, just for training
 val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
 
-# make output directory and filepath
-#TODO: current format depends on models with the same backbone being initiated on different days
-output_path = "./minitrain/output/" + "fasterRCNN_" + cnn_backbone + "_" + \
-              time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
-if not os.path.exists(output_path):
-    os.makedirs(output_path)
-
-# write datasets to csv
-train_df.to_csv(output_path + "train_df.csv")
-val_df.to_csv(output_path + "val_df.csv")
-
 # write arguments to text file
 def write_args(cnn_backbone, w, h, unbalanced, transforms, anchor_sizes, batch_size, optim, lr, wd, lr_scheduler, output_path):
     """
@@ -593,16 +564,13 @@ def write_args(cnn_backbone, w, h, unbalanced, transforms, anchor_sizes, batch_s
         for key, value in model_args.items():
             f.write('%s:%s\n' % (key, value))
 
-# write test arguments to file
-write_args(cnn_backbone, w, h, unbalanced, transforms, anchor_sizes, batch_size_org, optim, lr, wd, lr_scheduler, output_path)
-
 # obtain current learning rate
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
 
 # define checkpoint functions
-def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes,label2target, elapsed):
+def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_loss, model_type, num_classes,label2target, training_time):
     checkpoint = {'state_dict': model.state_dict(),
                   'optimizer': optimizer.state_dict(),
                   'epoch': epoch + 1,
@@ -613,126 +581,162 @@ def create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history, best_
                   'model_type': model_type,
                   'num_classes': num_classes,
                   'label2target': label2target,
-                  'training_time': elapsed}
+                  'training_time': training_time}
     return checkpoint
-
 
 def save_checkpoint(checkpoint, checkpoint_file):
     print(" Saving model state")
     torch.save(checkpoint, checkpoint_file)
 
+# define optimizer options
+optim_dict = ["SGD", "Adam", "AdamW"]
 
-# define starting weights, starting loss
-best_model_wts = copy.deepcopy(model.state_dict())
-best_loss = float('inf')
+# loop training through different optimizers
+for i in range(len(optim_dict)):
+    # set starting lr and wd
+    lr = lr_grid[2]  # TODO: loop through lr_grid
+    wd = wd_grid[2]  # TODO: loop through wd_grid
+    momentum = 0.9  # only need this for optimizer = SGD
 
-# create empty list to save losses
-loss_history = {
-    'train': [],
-    'val': []
-}
+    # define optimizer
+    optim = optim_dict[i]
+    optimizer = get_optimizer(optim, params, lr, wd, momentum)
 
-# train the model
-for epoch in range(num_epochs):
-    # start time
-    t_start = time.time()
-    # set learning rate and print epoch number
-    current_lr = get_lr(optimizer)
-    print('Epoch {}/{}, current lr={}'.format(epoch + 1, num_epochs, current_lr))
+    # set learning rate scheduler
+    #TODO: explore other lr schedulers
+    lr_scheduler = ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 
-    # training pass
-    model.train()
-    running_loss = 0.0
-    for batch_idx, (images, targets) in enumerate(tqdm(train_loader)):
-        # send data to device
-        images = list(image.to(device) for image in images)
-        targets = [{'boxes':t['boxes'].to(device), 'labels':t['labels'].to(device)} for t in targets]
+    # make output directory and filepath
+    #TODO: current format depends on models with the same backbone being initiated on different days
+    output_path = "./minitrain/output/" + "fasterRCNN_" + cnn_backbone + "_" + \
+                  time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
-        # forward pass
-        losses = model(images, targets)
-        loss = sum(loss for loss in losses.values())
+    # write test arguments to file
+    write_args(cnn_backbone, w, h, unbalanced, transforms, anchor_sizes, batch_size_org, optim, lr, wd, lr_scheduler, output_path)
 
-        if use_grad:
-            # normalize loss to account for batch accumulation
-            loss = loss / grad_accumulation
-            # backward pass
-            loss.backward()
-            # optimizer step every x=grad_accumulation batches
-            if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
+    # write datasets to csv
+    train_df.to_csv(output_path + "train_df.csv")
+    val_df.to_csv(output_path + "val_df.csv")
+
+    # define starting weights, starting loss
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_loss = float('inf')
+
+    # create empty list to save losses
+    loss_history = {
+        'train': [],
+        'val': []
+    }
+
+    # create empty list to save training time per epoch
+    training_time = []
+
+    # train the model
+    for epoch in range(num_epochs):
+        # start time
+        t_start = time.time()
+        # set learning rate and print epoch number
+        current_lr = get_lr(optimizer)
+        print('Epoch {}/{}, current lr={}'.format(epoch + 1, num_epochs, current_lr))
+
+        # training pass
+        model.train()
+        running_loss = 0.0
+        for batch_idx, (images, targets) in enumerate(tqdm(train_loader)):
+            # send data to device
+            images = list(image.to(device) for image in images)
+            targets = [{'boxes':t['boxes'].to(device), 'labels':t['labels'].to(device)} for t in targets]
+
+            # forward pass
+            losses = model(images, targets)
+            loss = sum(loss for loss in losses.values())
+
+            if use_grad:
+                # normalize loss to account for batch accumulation
+                loss = loss / grad_accumulation
+                # backward pass
+                loss.backward()
+                # optimizer step every x=grad_accumulation batches
+                if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
+                    optimizer.step()
+                    optimizer.zero_grad()
+                    print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
+
+            else:
+                # backward pass
+                loss.backward()
+                # optimizer step
                 optimizer.step()
+                # reset gradients
                 optimizer.zero_grad()
                 print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
-        else:
-            # backward pass
-            loss.backward()
-            # optimizer step
-            optimizer.step()
-            # reset gradients
-            optimizer.zero_grad()
-            print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
+            # update loss
+            running_loss += loss.item()
 
-        # update loss
-        running_loss += loss.item()
+        # record training loss
+        loss_history['train'].append(running_loss/len(train_loader))
+        print('train loss: %.6f' % (running_loss / len(train_loader)))
 
-    # record training loss
-    loss_history['train'].append(running_loss/len(train_loader))
-    print('train loss: %.6f' % (running_loss / len(train_loader)))
+        # validation pass
+        model.eval()
+        running_val_loss = 0.0
+        with torch.no_grad():
+            for batch_idx, (images, targets) in enumerate(tqdm(val_loader)):
+                model.train() # obtain losses without defining forward method
+                # move to device
+                images = list(image.to(device) for image in images)
+                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-    # validation pass
-    model.eval()
-    running_val_loss = 0.0
-    with torch.no_grad():
-        for batch_idx, (images, targets) in enumerate(tqdm(val_loader)):
-            model.train() # obtain losses without defining forward method
-            # move to device
-            images = list(image.to(device) for image in images)
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+                # collect losses
+                val_losses = model(images, targets)
+                val_loss = sum(loss for loss in val_losses.values())
 
-            # collect losses
-            val_losses = model(images, targets)
-            val_loss = sum(loss for loss in val_losses.values())
+                if use_grad:
+                    # normalize loss based on gradient accumulation
+                    val_loss = val_loss / grad_accumulation
+                    if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
+                        # reset gradients
+                        optimizer.zero_grad()
+                        print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
 
-            if use_grad:
-                # normalize loss based on gradient accumulation
-                val_loss = val_loss / grad_accumulation
-                if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
+                else:
                     # reset gradients
                     optimizer.zero_grad()
                     print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
 
-            else:
-                # reset gradients
-                optimizer.zero_grad()
-                print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
+                # update loss
+                running_val_loss += float(val_loss)
 
-            # update loss
-            running_val_loss += float(val_loss)
+            # record validation loss
+            val_loss = running_val_loss / len(val_loader)
+            loss_history['val'].append(running_val_loss / len(val_loader))
+            print('val loss: %.6f' % (running_val_loss / len(val_loader)))
 
-        # record validation loss
-        val_loss = running_val_loss / len(val_loader)
-        loss_history['val'].append(running_val_loss / len(val_loader))
-        print('val loss: %.6f' % (running_val_loss / len(val_loader)))
+        # compare validation loss
+        if val_loss < best_loss:
+            # update best loss
+            best_loss = val_loss
+            # update model weights
+            best_model_wts = copy.deepcopy(model.state_dict())
 
-    # compare validation loss
-    if val_loss < best_loss:
-        # update best loss
-        best_loss = val_loss
-        # update model weights
-        best_model_wts = copy.deepcopy(model.state_dict())
+        # adjust learning rate
+        lr_scheduler.step(val_loss)
+        # load best model weights if current epoch did not produce best weights
+        if current_lr != get_lr(optimizer):
+            model.load_state_dict(best_model_wts)
 
-    # adjust learning rate
-    lr_scheduler.step(val_loss)
-    # load best model weights if current epoch did not produce best weights
-    if current_lr != get_lr(optimizer):
-        model.load_state_dict(best_model_wts)
+        # calculate training time per epoch
+        elapsed = time.time() - t_start
+        elapsed = str(timedelta(seconds=elapsed))
+        training_time.append(elapsed)
 
-    # calculate training time per epoch
-    elapsed = time.time() - t_start
-    elapsed = str(timedelta(seconds=elapsed))
+        # save model state
+        checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history,
+                                       best_loss, model_type, num_classes, label2target, training_time)
+        checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
+        save_checkpoint(checkpoint, checkpoint_file)
 
-    # save model state
-    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history,
-                                   best_loss, model_type, num_classes, label2target, elapsed)
-    checkpoint_file = output_path + "checkpoint_" + str(epoch+1) + "epochs.pth"
-    save_checkpoint(checkpoint, checkpoint_file)
+        print("End model training round")
