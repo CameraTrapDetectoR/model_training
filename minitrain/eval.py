@@ -7,7 +7,7 @@ import torch
 import pandas as pd
 from PIL import ImageFile
 from torchvision.models.detection.rpn import AnchorGenerator
-from utils.metrics import filter_preds
+
 from torchvision.ops import nms
 from tqdm import tqdm
 import torch.cuda
@@ -42,7 +42,7 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set path to model run being evaluated
-output_path = "./minitrain/output/fasterRCNN_resnet_20230203_1250/"
+output_path = "./minitrain/output/fasterRCNN_resnet_20230206_1142/"
 
 # open model arguments file
 with open(output_path + 'model_args.txt') as f:
@@ -86,9 +86,9 @@ val_transform = A.Compose([ToTensorV2()],
 # initiate model
 num_classes = checkpoint['num_classes']
 model = fasterrcnn_resnet50_fpn_v2()
-model.rpn.anchor_generator = anchor_gen
-in_features = model.roi_heads.box_predictor.cls_score.in_features
-model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+# model.rpn.anchor_generator = anchor_gen
+# in_features = model.roi_heads.box_predictor.cls_score.in_features
+# model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
 # load model weights
 model.load_state_dict(checkpoint['state_dict'])
@@ -213,7 +213,7 @@ for i in tqdm(range(len(image_infos))):
             'file_id': image_infos[i][:-4],
             'class_name': 'empty',
             'confidence': 1,
-            'bbox': [0, 0, w, h]
+            'bbox': [(0, 0, w, h)]
         })
     else:
         pred_df_i = pd.DataFrame({
@@ -240,13 +240,17 @@ target_df = pd.concat(target_df).reset_index(drop=True)
 target_df.to_csv(output_path + "target_df.csv")
 pred_df.to_csv(output_path + "pred_df.csv")
 
+# define format to read bboxes
+# use 'csv' if reloading bboxes from csv file; use 'env' if working with direct model output
+format = 'csv'
+
+if format == 'csv':
+    pred_df = pd.read_csv(output_path + "pred_df.csv")
+    target_df = pd.read_csv(output_path + "target_df.csv")
+
 # extract predicted bboxes, confidence scores, and labels
 preds = []
 targets = []
-
-# define format to read bboxes
-# use 'csv' if reloading bboxes from csv file; use 'env' if working with direct model output
-format == 'env'
 
 # create list of dictionaries for targets, preds for each image
 for i in tqdm(range(len(image_infos))):
@@ -267,6 +271,7 @@ for i in tqdm(range(len(image_infos))):
         pred_boxes = [box for box in p_df['bbox']]
         # ground truth boxes
         target_boxes = [box for box in t_df['bbox']]
+
 
     # format scores and labels
     pred_scores = p_df['confidence'].values.tolist()
@@ -296,8 +301,9 @@ metric.update(preds, targets)
 results = metric.compute()
 
 # Add class names to results
-results_df = pd.DataFrame(results).reset_index().rename(columns={"index": "target"})
-results_df['class_name'] = results_df['target'].map(out_target2label)
+results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().rename(columns={"index": "target"})
+results_df['class_name'] = results_df['target'].map(target2label)
+results_df.drop(['target'], axis = 1)
 
 # add F1 score to results
 results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
@@ -308,11 +314,11 @@ results_df.to_csv(output_path + "results_df.csv")
 
 
 # Save model weights for loading into R package
-path2weights = output_path + cnn_backbone + "_" + numclasses + "classes_weights_cpu.pth"
+path2weights = output_path + cnn_backbone + "_" + num_classes + "classes_weights_cpu.pth"
 torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
 
 # save model architecture for loading into R package
 model.eval()
 s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + numclasses + "classes_Arch_cpu.pt")
+torch.jit.save(s, output_path + cnn_backbone + "_" + num_classes + "classes_Arch_cpu.pt")
 
