@@ -6,10 +6,7 @@ import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # write model arguments to text file
-# write arguments to text file
-def write_args(cnn_backbone, w, h, unbalanced,
-               transforms, anchor_sizes, batch_size,
-               optim, lr, wd, lr_scheduler, output_path):
+def write_args(cnn_backbone, w, h, unbalanced, transforms, anchor_sizes, batch_size, optim, lr, wd, lr_scheduler, output_path):
     """
     write txt file to output dir that has run values for changeable hyperparameters:
     - model backbone
