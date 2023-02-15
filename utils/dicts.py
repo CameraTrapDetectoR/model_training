@@ -1,7 +1,7 @@
 # functions to write label dictionaries and create representative samples
 
 import pandas as pd
-
+from collections import Counter
 
 def gen_dict(df):
     """
@@ -45,11 +45,12 @@ def gen_dict(df):
 
 def fam_dict(df, max_per_class, min_per_class):
     """
+    create label dict and representative sample for family model
 
-    :param df:
-    :param max_per_class:
-    :param min_per_class:
-    :return:
+    :param df: formatted df
+    :param max_per_class: max annotations per class
+    :param min_per_class: min annotations per class
+    :return: sample df, label dict, col to stratify over test/val split
     """
 
     # list families with fewer images than category min

@@ -35,7 +35,7 @@ from torchvision.models.detection.anchor_utils import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
 from datetime import timedelta
 
-# from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 # determine operating system, for batch vs. local jobs
 
@@ -144,8 +144,8 @@ w_grid = [408, 510, 612, 816, 1224]
 h_grid = [307, 384, 460, 614, 921]
 
 # Define width and height OUTSIDE any functions
-w = w_grid[-1]
-h = h_grid[-1]
+w = w_grid[1]
+h = h_grid[1]
 
 # define data augmentation grid
 #TODO: add image quality compression here?
@@ -300,12 +300,13 @@ class DetectDataset(torch.utils.data.Dataset):
     Images and targets are returned as Tensors.
     """
 
-    def __init__(self, df, image_dir, w, h, transform):
+    def __init__(self, df, image_dir, w, h, label2target, transform):
         self.image_dir = image_dir
         self.df = df
         self.image_infos = df.filename.unique()
         self.w = w
         self.h = h
+        self.label2target = label2target
         self.transform = transform
 
     def __getitem__(self, item):
@@ -337,7 +338,7 @@ class DetectDataset(torch.utils.data.Dataset):
         # convert bboxes and labels to a tensor dictionary
         target = {
             'boxes': boxes,
-            'labels': torch.tensor([label2target[i] for i in labels]).long()
+            'labels': torch.tensor([self.label2target[i] for i in labels]).long()
         }
         # apply data augmentation
         if self.transform is not None:
@@ -354,8 +355,8 @@ class DetectDataset(torch.utils.data.Dataset):
         return len(self.image_infos)
 
 # load pytorch datasets
-train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=train_transform)
-val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h, transform=val_transform)
+train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h, label2target=label2target, transform=train_transform)
+val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,label2target=label2target, transform=val_transform)
 
 # backbone grid
 #TODO revisit these backbone choices; troubleshoot connecting CNN to RPN
@@ -365,7 +366,8 @@ cnn_backbone = backbone_grid[0]
 
 # generate anchor boxes based on image size:
 # TODO: think about adjusting anchor sizes depending on model backbone
-anchor_sizes = ((32,), (64,), (128,), (256,), (512,)) # ((16,), (32,), (64,), (128,), (256,))
+# anchor_sizes = ((32,), (64,), (128,), (256,), (512,))
+anchor_sizes = ((16,), (32,), (64,), (128,), (256,))
 aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
 anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 
@@ -373,96 +375,13 @@ anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
 
 # define model
-#TODO: need to research specific implementation of each backbone onto Faster-RCNN
-def get_model(cnn_backbone, num_classes, anchor_gen):
-    """
-    function to load Faster-RCNN model with a specified backbone
-    :param cnn_backbone: options from backbone_grid identify different CNN backbone architectures
-    to load underneath the region proposal network
-    :param num_classes: number of classes in the model
-    :return: loaded model
-    """
-
-    # feature map to perform RoI cropping
-    roi_pooler = MultiScaleRoIAlign(featmap_names=['0'], output_size=7, sampling_ratio=2)
-
-    # initialize model by class
-
-    if cnn_backbone == 'resnet':
-        model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT')
-        # update anchor boxes
-        model.rpn.anchor_generator = anchor_gen
-        in_features = model.roi_heads.box_predictor.cls_score.in_features
-        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-        return model
-
-
-    if cnn_backbone == 'vgg16':
-        backbone = vgg16_bn(weights='DEFAULT').features
-        backbone.out_channels = 512
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'conv_s':
-        backbone = convnext_small(weights='DEFAULT').features
-        backbone.out_channels = 768
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'conv_b':
-        backbone = convnext_base(weights='DEFAULT').features
-        backbone.out_channels = 1024
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'eff_b4':
-        backbone = efficientnet_b4(weights='DEFAULT').features
-        backbone.out_channels = 448
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'eff_v2m':
-        backbone = efficientnet_v2_m(weights='DEFAULT').features
-        backbone.out_channels = 512
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'swin_s':
-        backbone = swin_s(weights='DEFAULT').features
-        backbone.out_channels = 768
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-    if cnn_backbone == 'swin_b':
-        backbone = swin_b(weights='DEFAULT').features
-        backbone.out_channels = 1024
-        model = FasterRCNN(backbone=backbone,
-                           num_classes=num_classes,
-                           rpn_anchor_generator=anchor_gen,
-                           box_roi_pool=roi_pooler)
-        return model
-
-# load model
-#TODO load model w/o weights and try again
-model = get_model(cnn_backbone=cnn_backbone, num_classes=num_classes, anchor_gen=anchor_gen).to(device)
+model = fasterrcnn_resnet50_fpn_v2(weights='DEFAULT')
+# update anchor boxes
+model.rpn.anchor_generator = anchor_gen
+# update model for customized classes
+in_features = model.roi_heads.box_predictor.cls_score.in_features
+model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+model.to(device)
 params = [p for p in model.parameters() if p.requires_grad]
 
 # starting learning rate grid
@@ -499,7 +418,7 @@ batch_size = batch_grid[1]
 batch_size_org = batch_size
 
 # boolean to use gradient accumulation
-use_grad = True
+use_grad = False
 
 # set denominator if using gradient accumulation
 if use_grad:
@@ -644,6 +563,7 @@ for i in range(len(optim_dict)):
         # training pass
         model.train()
         running_loss = 0.0
+        optimizer.zero_grad()
         for batch_idx, (images, targets) in enumerate(tqdm(train_loader)):
             # send data to device
             images = list(image.to(device) for image in images)
@@ -665,12 +585,12 @@ for i in range(len(optim_dict)):
                     print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
             else:
+                # reset gradients
+                optimizer.zero_grad()
                 # backward pass
                 loss.backward()
                 # optimizer step
                 optimizer.step()
-                # reset gradients
-                optimizer.zero_grad()
                 print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
 
             # update loss

@@ -5,19 +5,12 @@ from torch.utils.data import Dataset
 import torch
 import torch.cuda
 import numpy as np
-from PIL import ImageFile
-import time
-import random
-import albumentations as A
 import cv2
-from albumentations.pytorch.transforms import ToTensorV2
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-
 
 
 
 # Create PyTorch dataset
-class DetectDataset(torch.utils.data.Dataset):
+class DetectDataset(Dataset):
     """
     Builds dataset with images and their respective targets, bounding boxes and class labels.
     DF must include: filename containing pathway to individual images; bbox ccordinates in format proportional to
@@ -50,8 +43,6 @@ class DetectDataset(torch.utils.data.Dataset):
         # resize image so bboxes can also be converted
         img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
         img = img.astype(np.float32) / 255.
-        # img = Image.open(img_path).convert("RGB").resize((self.w, self.h), resample=Image.Resampling.BILINEAR)
-        # img = np.array(img, dtype="float32")/255.
         # filter df rows for img
         df = self.df
         data = df[df['filename'] == image_id]

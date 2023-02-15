@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 from collections import Counter
+from sklearn.model_selection import train_test_split
 
 
 # Define class size range based on model type
@@ -107,3 +108,27 @@ def format_vars(df):
 
     return df
 
+# split df into training / validation sets
+def split_df(df, columns2stratify):
+    """
+    Takes df, columns2stratify output from the wrangle_df function and splits the dataset by the stratified column.
+    70% of total data is allocated to training, while 15% each is allocated to validation and testing.
+    :param df: sample df
+    :param columns2stratify: column to stratify over sampling to preserve representation across split dfs
+    """
+
+    df_unique_filename = df.drop_duplicates(subset='filename', keep='first')
+    # split 70% of images into training set
+    trn_ids, rem_ids = train_test_split(df_unique_filename['filename'], shuffle=True,
+                                        stratify=df_unique_filename[columns2stratify],
+                                        test_size=0.3, random_state=22)
+    train_df = df[df['filename'].isin(trn_ids)].reset_index(drop=True)
+    rem_df = df[df['filename'].isin(rem_ids)].reset_index(drop=True)
+    rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
+    # split remaining 30% evenly between validation and test sets
+    val_ids, test_ids = train_test_split(rem_unique_filename['filename'], shuffle=True,
+                                         stratify=rem_unique_filename[columns2stratify],
+                                         test_size=0.33, random_state=22)
+    val_df = rem_df[rem_df['filename'].isin(val_ids)].reset_index(drop=True)
+    test_df = rem_df[rem_df['filename'].isin(test_ids)].reset_index(drop=True)
+    return train_df, val_df, test_df
