@@ -1,13 +1,14 @@
 # Functions to set up data
 
 import os
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, WeightedRandomSampler
 import torch
 import torch.cuda
 import numpy as np
 import cv2
 
-
+import pandas as pd
+from collections import Counter
 
 # Create PyTorch dataset
 class DetectDataset(Dataset):
@@ -74,3 +75,30 @@ class DetectDataset(Dataset):
     def __len__(self):
         return len(self.image_infos)
 
+
+def get_class_weights(train_df):
+    """
+    introduce class weights to oversample minority classes
+    and avoid overfitting majroity classes
+    :param train_df: train df
+    :return: weighted random sampler to pass to dataloader
+    """
+    #TODO: oversample pig images for pig-only model
+
+    # collect class counts in a dataframe
+    s = dict(Counter(train_df['LabelName']))
+    sdf = pd.DataFrame.from_dict(s, orient='index').reset_index()
+    sdf.columns = ['LabelName', 'counts']
+
+    # take the inverse to define class weights; smaller counts -> higher weights
+    sdf['weights'] = 1/sdf['counts']
+    swts = dict(zip(sdf.LabelName, sdf.weights))
+    train_unique = train_df.drop_duplicates(subset='filename', keep='first')
+
+    # assign a weight to each image
+    sample_weights = train_unique.LabelName.map(swts).tolist()
+
+    # load weighted random sampler
+    sampler = WeightedRandomSampler(sample_weights, num_samples=len(train_unique), replacement=True)
+
+    return sampler

@@ -4,7 +4,7 @@
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_ResNet50_FPN_V2_Weights
 
-def get_fasterrcnn(cnn_backbone, num_classes, anchor_gen):
+def load_fasterrcnn(cnn_backbone, num_classes, anchor_gen):
 
 
     # initialize model by class

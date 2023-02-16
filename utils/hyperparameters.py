@@ -19,10 +19,11 @@ def get_anchors(h):
     aspect_ratios = ((0.5, 1.0, 2.0),) * len(anchor_sizes)
     anchor_gen = AnchorGenerator(anchor_sizes, aspect_ratios)
 
-    return anchor_gen
+    return anchor_sizes, anchor_gen
 
 
 # obtain current learning rate
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
+
