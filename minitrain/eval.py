@@ -50,6 +50,7 @@ with open(output_path + 'model_args.txt') as f:
 model_args['image width'] = int(model_args['image width'])
 model_args['image height'] = int(model_args['image height'])
 model_args['anchor box sizes'] = tuple(eval(model_args['anchor box sizes']))
+cnn_backbone = model_args['backbone']
 
 # load image info
 df = pd.read_csv(output_path + "val_df.csv")
@@ -67,7 +68,7 @@ checkpoint = torch.load(checkpoint_path, map_location=device)
 # loss_history = checkpoint['loss_history']
 # plot_losses(model_type, loss_history)
 #
-# # rreview training times
+# # review training times
 # training_time = checkpoint['training_time']
 
 # load dictionaries
@@ -86,9 +87,9 @@ val_transform = A.Compose([ToTensorV2()],
 # initiate model
 num_classes = checkpoint['num_classes']
 model = fasterrcnn_resnet50_fpn_v2()
-# model.rpn.anchor_generator = anchor_gen
-# in_features = model.roi_heads.box_predictor.cls_score.in_features
-# model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+model.rpn.anchor_generator = anchor_gen
+in_features = model.roi_heads.box_predictor.cls_score.in_features
+model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
 # load model weights
 model.load_state_dict(checkpoint['state_dict'])
@@ -300,14 +301,16 @@ metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
 metric.update(preds, targets)
 results = metric.compute()
 
-# Add class names to results
+# convert results to dataframe
 results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().rename(columns={"index": "target"})
-results_df['class_name'] = results_df['target'].map(target2label)
-results_df.drop(['target'], axis = 1)
 
 # add F1 score to results
 results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
                               (results_df['map_per_class'] + results_df['mar_100_per_class']))
+
+# Add class names to results
+results_df['class_name'] = results_df['target'].map(target2label)
+results_df = results_df.drop(['target'], axis = 1)
 
 # save results df to csv
 results_df.to_csv(output_path + "results_df.csv")

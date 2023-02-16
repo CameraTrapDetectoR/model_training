@@ -20,7 +20,7 @@ else:
 # for IMAGE_ROOT, specify full path to folder where all/only training images are located
 if local:
     IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
-    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
+    os.chdir("/")
 else:
     IMAGE_ROOT = "/scratch/summit/burnsal@colostate.edu"
     os.chdir('/projects/burnsal@colostate.edu/CameraTrapDetectoR')

@@ -21,7 +21,7 @@ else:
 if local:
     IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
     YOLO_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos_yolo'
-    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
+    os.chdir("/")
 else:
     IMAGE_ROOT = "/scratch/summit/burnsal@colostate.edu/IMAGES"
     YOLO_ROOT = "/scratch/summit/burnsal@colostate.edu/YOLO_IMAGES"

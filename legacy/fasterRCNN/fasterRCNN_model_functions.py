@@ -27,7 +27,6 @@ def wrangle_df(df, IMAGE_ROOT):
     # fix special characters in file names
     # 07.22.22 AB: uncomment this line on CURC, comment out when local
     # df['filename'] = df['filename'].str.replace("'","").replace(" ","")
-    # TODO: ask Ryan to remove special characters from folder names
 
     # cross check filenames to image files in directory
     # for local jobs, need to be connected to VPN here
@@ -57,7 +56,7 @@ def wrangle_df(df, IMAGE_ROOT):
     # check for bboxes that are too small
     df['YDiff'] = df['YMax'] - df['YMin']
     df['XDiff'] = df['XMax'] - df['XMin']
-    df_tooSmall = df[(df['YDiff'] < 0.001) | (df['XDiff'] < 0.001)]
+    df_tooSmall = df[(df['YDiff'] < 0.01) | (df['XDiff'] < 0.01)]
     assert df_tooSmall.shape[0] == 0, "Remove image files where bboxes are too small"
 
     # update column names for common name
