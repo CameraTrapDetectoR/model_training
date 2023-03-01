@@ -22,17 +22,12 @@ from torch.optim import SGD, lr_scheduler
 from utils.hyperparameters import get_lr
 
 import time
-import tqdm
 from datetime import timedelta
-from models.train_one_epoch import train_one_epoch
+from tqdm import tqdm
 import copy
 from utils.checkpoints import write_args, \
     create_checkpoint, save_checkpoint
 
-import torchvision
-from utils.metrics import prepare_results
-from torchmetrics.detection.mean_ap import MeanAveragePrecision
-import numpy as np
 
 #######
 ## -- Prepare System and Data for Model Training
@@ -131,7 +126,7 @@ batch_size = 32
 batch_size_org = batch_size
 
 # boolean to use gradient accumulation
-use_grad = False
+use_grad = True
 
 # set denominator if using gradient accumulation
 if use_grad:
@@ -210,9 +205,90 @@ for epoch in range(num_epochs):
     # print epoch info
     print('Epoch {}, current lr={}'.format(epoch + 1, current_lr))
 
-    # run training/validation
-    # Note: arguments should already be specified!
-    model, optimizer, loss_history, val_loss = train_one_epoch()
+    ## -- TRAIN PASS
+    # initialize training pass
+    model.train()
+    running_loss = 0.0
+
+    # loop through train loader
+    for batch_idx, (images, targets) in enumerate(tqdm(train_loader)):
+        # send data to device
+        images = list(image.to(device) for image in images)
+        targets = [{'boxes': t['boxes'].to(device), 'labels': t['labels'].to(device)} for t in targets]
+
+        # forward pass, calculate losses
+        losses = model(images, targets)
+        loss = sum(loss for loss in losses.values())
+
+        # TODO: determine if optimizer.zero_grad() needs to move
+        if use_grad:
+            # normalize loss to account for batch accumulation
+            loss = loss / grad_accumulation
+            # backward pass
+            loss.backward()
+            # optimizer step every x=grad_accumulation batches
+            if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(train_loader)):
+                optimizer.step()
+                optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
+
+        else:
+            # backward pass
+            loss.backward()
+            # optimizer step
+            optimizer.step()
+            # reset gradients
+            optimizer.zero_grad()
+            print(f'Batch {batch_idx} / {len(train_loader)} | Train Loss: {loss:.4f}')
+
+        # update loss
+        running_loss += loss.item()
+
+    # average loss across entire epoch
+    epoch_train_loss = running_loss / len(train_loader)
+
+    # record training loss
+    loss_history['train'].append(epoch_train_loss)
+
+    ## -- VALIDATION PASS
+
+    # initialize validation pass, validation loss
+    model.train(False)
+    running_val_loss = 0.0
+
+    # loop through val loader
+    with torch.no_grad():
+        for batch_idx, (images, targets) in enumerate(tqdm(val_loader)):
+            model.train()  # obtain losses without defining forward method
+            # move to device
+            images = list(image.to(device) for image in images)
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+            # collect losses
+            val_losses = model(images, targets)
+            val_loss = sum(loss for loss in val_losses.values())
+
+            if use_grad:
+                # normalize loss based on gradient accumulation
+                val_loss = val_loss / grad_accumulation
+                if ((batch_idx + 1) % grad_accumulation == 0) or (batch_idx + 1 == len(val_loader)):
+                    # reset gradients
+                    optimizer.zero_grad()
+                    print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
+
+            else:
+                # reset gradients
+                optimizer.zero_grad()
+                print(f'Batch {batch_idx} / {len(val_loader)} | Val Loss: {val_loss:.4f}')
+
+            # update loss
+            running_val_loss += float(val_loss)
+
+    # average val loss across the entire epoch
+    epoch_val_loss = running_val_loss / len(val_loader)
+
+    # record validation loss
+    loss_history['val'].append(epoch_val_loss)
 
     ## -- UPDATE MODEL
 
@@ -236,136 +312,11 @@ for epoch in range(num_epochs):
     training_time.append(elapsed)
 
     # save model state
-    checkpoint = create_checkpoint(model, optimizer, epoch, lr_scheduler, loss_history,
+    checkpoint = create_checkpoint(model, optimizer, epoch, current_lr, lr_scheduler, loss_history,
                                    best_loss, model_type, num_classes, label2target, training_time)
     checkpoint_file = output_path + "checkpoint_" + str(epoch + 1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
 
-
-#######
-## -- Evaluate the Model
-#######
-
-# list unique images in test dataset
-image_infos = test_df.filename.unique()
-
-# create placeholders for targets and predictions
-pred_df = []
-target_df = []
-
-#TODO: set this apart as its own function?
-# deploy model on test images
-model.eval()
-for i in tqdm(range(len(image_infos))):
-    # define dataset and dataloader
-    dfi = df[df['filename'] == image_infos[i]]
-    dsi = DetectDataset(df=dfi, image_dir=IMAGE_ROOT, w=w, h=h, label2target=label2target, transform=val_transform)
-    dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
-
-    # extract image, bbox, and label info
-    input, target = next(iter(dli))
-    tbs = dsi[0][1]['boxes']
-    image = list(image.to(device) for image in input)
-
-    # run input through the model
-    output = model(image)[0]
-
-    # extract prediction bboxes, labels, scores above score_thresh
-    # format prediction data
-    bbs = output['boxes'].cpu().detach()
-    labels = output['labels'].cpu().detach()
-    confs = output['scores'].cpu().detach()
-
-    # id indicies of tensors to include in evaluation
-    idx = torch.where(confs > 0.1)
-
-    # filter to predictions that meet the threshold
-    bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
-
-    # perform non-maximum suppression on remaining predictions
-    # set iou threshold low since training data does not contain overlapping ground truth boxes
-    ixs = torchvision.optim.nms(bbs, confs, iou_threshold=0.1)
-
-    bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
-
-    # format predictions
-    bbs = bbs.tolist()
-    confs = confs.tolist()
-    labels = labels.tolist()
-
-    # save predictions and targets
-    if len(bbs) == 0:
-        pred_df_i = pd.DataFrame({
-            'filename': image_infos[i],
-            'file_id': image_infos[i][:-4],
-            'class_name': 'empty',
-            'confidence': 1,
-            'bbox': [(0, 0, w, h)]
-        })
-    else:
-        pred_df_i = pd.DataFrame({
-            'filename': image_infos[i],
-            'file_id': image_infos[i][:-4],
-            'class_name': [target2label[a] for a in labels],
-            'confidence': confs,
-            'bbox': bbs
-        })
-    tar_df_i = pd.DataFrame({
-        'filename': image_infos[i],
-        'file_id': image_infos[i][:-4],
-        'class_name': dfi['LabelName'].tolist(),
-        'bbox': tbs.tolist()
-    })
-    pred_df.append(pred_df_i)
-    target_df.append(tar_df_i)
-
-# concatenate preds and targets into dfs
-pred_df = pd.concat(pred_df).reset_index(drop=True)
-target_df = pd.concat(target_df).reset_index(drop=True)
-
-# save prediction and target dfs to csv
-target_df.to_csv(output_path + "target_df.csv")
-pred_df.to_csv(output_path + "pred_df.csv")
-
-# define format to read bboxes
-# use 'csv' if reloading bboxes from csv file; use 'env' if working with direct model output
-format = 'csv'
-
-if format == 'csv':
-    pred_df = pd.read_csv(output_path + "pred_df.csv")
-    target_df = pd.read_csv(output_path + "target_df.csv")
-
-preds, targets = prepare_results()
-
-# initialize metric
-metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
-metric.update(preds, targets)
-results = metric.compute()
-
-# convert results to dataframe
-results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().rename(columns={"index": "target"})
-
-# add F1 score to results
-results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
-                              (results_df['map_per_class'] + results_df['mar_100_per_class']))
-
-# Add class names to results
-results_df['class_name'] = results_df['target'].map(target2label)
-results_df = results_df.drop(['target'], axis = 1)
-
-# save results df to csv
-results_df.to_csv(output_path + "results_df.csv")
-
-#######
-## -- Save Model
-#######
+    print('Model trained for {} epochs'.format(epoch + 1))
 
 
-# Save model weights for loading into R package
-path2weights = output_path + cnn_backbone + "_" + num_classes + "classes_weights_cpu.pth"
-torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
-
-# save model architecture for loading into R package
-model.eval()
-s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + num_classes + "classes_Arch_cpu.pt")
