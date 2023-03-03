@@ -168,10 +168,15 @@ if not os.path.exists(output_path):
 # write model args to text file
 write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size_org, optim, lr, wd, lr_scheduler, output_path)
 
+# Get database of training data attributes by site, class
+db_full, db_simple = dicts.train_database(df=train_df)
+
 # write datasets to csv
 train_df.to_csv(output_path + "train_df.csv")
 val_df.to_csv(output_path + "val_df.csv")
 test_df.to_csv(output_path + "test_df.csv")
+db_full.to_csv(output_path + "db_full.csv")
+db_simple.to_csv(output_path + "db_simple.csv")
 
 #######
 ## -- Train the Model
