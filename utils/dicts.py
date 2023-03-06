@@ -276,7 +276,7 @@ def pig_dict(df, max_per_class, min_per_class):
 
     return df, label2target, columns2stratify
 
-def train_database(df=train_df):
+def train_database(df):
     """
     creates database of training data by class, database, etc.
     :param df: train_df

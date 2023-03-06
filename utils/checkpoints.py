@@ -65,7 +65,7 @@ def create_checkpoint(model, optimizer, epoch, current_lr, lr_scheduler, loss_hi
     :param model: model (see model_args.txt for backbone)
     :param optimizer: optimizer parameters
     :param epoch: training epoch just completed
-    :param lr: current learning rate
+    :param current_lr: current learning rate
     :param lr_scheduler: learning rate scheduler
     :param loss_history: train/val loss history
     :param best_loss: best loss

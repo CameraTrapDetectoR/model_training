@@ -22,8 +22,6 @@ def plot_losses(model_type, cnn_backbone, loss_history, output_path):
     plt.save(output_path + "Loss_History_Plot.png")
 
 
-
-
 # filter predictions with low probability scores
 def filter_preds(output, threshold):
     """

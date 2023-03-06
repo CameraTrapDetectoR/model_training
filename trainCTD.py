@@ -10,12 +10,10 @@ from utils.data_process import class_range, existing_images, \
 from utils import dicts
 import pandas as pd
 
-import albumentations as A
-from albumentations.pytorch.transforms import ToTensorV2
 from utils.data_setload import DetectDataset, get_class_weights
 from torch.utils.data import DataLoader
 
-from utils.hyperparameters import get_anchors
+from utils.hyperparameters import get_anchors, get_transforms
 from models.backbones import load_fasterrcnn
 
 from torch.optim import SGD, lr_scheduler
@@ -51,132 +49,214 @@ else:
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
-# Set model type: options = 'general', 'family', 'species', 'pig_only'
-model_type = 'species'
+# determine if resuming training from existing checkpoint
+resume = False
 
-max_per_class, min_per_class = class_range(model_type)
+# model setup if resuming training
+if resume:
+    # set output path
+    output_path = "./output/fasterRCNN_resnet_20230221_1612/"
 
-# load annotations
-df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv")
+    # load datasets
+    train_df = pd.read_csv(output_path + "train_df.csv")
+    val_df = pd.read_csv(output_path + "val_df.csv")
+    test_df = pd.read_csv(output_path + "test_df.csv")
 
-# prune df to existing images
-df = existing_images(df, IMAGE_ROOT)
+    # open model arguments file
+    with open(output_path + 'model_args.txt') as f:
+        model_args = {k: v for line in f for (k, v) in [line.strip().split(":")]}
 
-# confirm all bbox coordinates correspond to UL, LR corners
-df = orient_boxes(df)
+    # load model checkpoint
+    checkpoint_path = output_path + "checkpoint_14epochs.pth"
+    checkpoint = torch.load(checkpoint_path, map_location=device)
 
-# format df
-df = format_vars(df)
+    # define label dictionaries
+    label2target = checkpoint['label2target']
+    target2label = {t: l for l, t in label2target.items()}
 
-# create dictionary - create the dict corresponding to model type
-df, label2target, columns2stratify = dicts.spec_dict(df, max_per_class, min_per_class)
+    # define image dimensions
+    w = int(model_args['image width'])
+    h = int(model_args['image height'])
 
-# reverse dictionary to read into pytorch
-target2label = {t: l for l, t in label2target.items()}
+    # define data augmentation pipelines
+    transforms = model_args['data augmentations']
+    train_transform, val_transform = get_transforms(transforms=transforms)
 
-# define number of classes
-num_classes = max(label2target.values()) + 1
+    # load Pytorch datasets
+    train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                             label2target=label2target, transform=train_transform)
+    val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                           label2target=label2target, transform=val_transform)
 
-# split df into train/val/test sets
-train_df, val_df, test_df = split_df(df, columns2stratify)
+    # define anchor generator
+    anchor_sizes, anchor_gen = get_anchors(h=h)
+    assert anchor_sizes == tuple(eval(model_args['anchor box sizes'])), "Anchor box sizes not consistent."
 
-# set image dimensions for training
-# TODO: determine ideal training w and h
-w = 408
-h = 307
+    # initiate model
+    cnn_backbone = model_args['backbone']
+    num_classes = checkpoint['num_classes']
+    model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
 
-# define data augmentation pipelines
-# note augmentations as a string to save in model arguments
-transforms = 'shear, rotate, huesat, brightcont, safecrop, hflip'
+    # load current model weights from checkpoint
+    model.load_state_dict(checkpoint['state_dict'])
+    model.to(device)
+    params = [p for p in model.parameters() if p.requires_grad]
 
-train_transform = A.Compose([A.Affine(shear=(-30, 30), fit_output=True, p=0.3),
-                             A.Affine(rotate=(-30, 30), fit_output=True, p=0.3),
-                             A.HueSaturationValue(p=0.4),
-                             A.RandomBrightnessContrast(p=0.4),
-                             A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.4),
-                             A.HorizontalFlip(p=0.4),
-                             ToTensorV2()],
-                            bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),)
+    # define total epochs
+    num_epochs = 50
+    assert num_epochs > checkpoint['epoch'], "Model already trained for total epochs requested."
 
-val_transform = A.Compose([ToTensorV2()],
-                          bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),)
+    # load batch size
+    batch_size = int(model_args['batch size'])
+    batch_size_org = batch_size
 
+    # boolean to use gradient accumulation
+    use_grad = True
 
-# Load PyTorch Datasets
-train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
-                         label2target=label2target, transform=train_transform)
-val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,
-                       label2target=label2target, transform=val_transform)
+    # set denominator if using gradient accumulation
+    if use_grad:
+        # set number of gradients to accumulate before updating weights
+        grad_accumulation = 8
+        # effective batch size = batch_size * grad_accumulation
+        batch_size = batch_size_org // grad_accumulation
 
-# define anchor boxes based on image size
-anchor_sizes, anchor_gen = get_anchors(h=h)
+    # set up class weights
+    sampler = get_class_weights(train_df)
 
-# define model backbone
-cnn_backbone = 'resnet'
+    # define dataloaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn,
+                              drop_last=True, sampler=sampler)
+    # do not oversample for validation, just for training
+    val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
 
-# initialize model
-model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen).to(device)
-params = [p for p in model.parameters() if p.requires_grad]
+    # load hyperparameters
+    lr = checkpoint['current_lr']
+    wd = int(model_args['weight decay'])
+    momentum = 0.9
 
-# define number of training epochs
-num_epochs = 50
-
-# define batch size
-batch_size = 32
-batch_size_org = batch_size
-
-# boolean to use gradient accumulation
-use_grad = True
-
-# set denominator if using gradient accumulation
-if use_grad:
-    # set number of gradients to accumulate before updating weights
-    grad_accumulation = 8
-    # effective batch size = batch_size * grad_accumulation
-    batch_size = batch_size_org // grad_accumulation
+    # load optimizer
+    optim = 'SGD'
+    optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
+    optimizer.load_state_dict(checkpoint['optimizer'])
 
 
-# set up class weights
-sampler = get_class_weights(train_df)
 
-# define dataloaders
-train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn,
-                          drop_last=True, sampler=sampler)
-# do not oversample for validation, just for training
-val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+# model setup for new training
+else:
+    # Set model type: options = 'general', 'family', 'species', 'pig_only'
+    model_type = 'species'
 
-# define starting lr, wd, momentum
-#TODO: review training results to confirm these
-lr = 0.01
-wd = 0.001
-momentum = 0.9
+    max_per_class, min_per_class = class_range(model_type)
 
-# load optimizer
-#TODO: create function to choose this based on optim
-optim = 'SGD'
-optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
+    # load annotations
+    df = pd.read_csv("./labels/varified.bounding.boxes_for.training.final.2022-10-19.csv")
 
-# set learning rate scheduler
-lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+    # prune df to existing images
+    df = existing_images(df, IMAGE_ROOT)
 
-# make output directory and filepath
-output_path = "./output/" + "fasterRCNN_" + cnn_backbone + "_" + \
-              time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
-if not os.path.exists(output_path):
-    os.makedirs(output_path)
+    # confirm all bbox coordinates correspond to UL, LR corners
+    df = orient_boxes(df)
 
-# write model args to text file
-write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size_org, optim, lr, wd, lr_scheduler, output_path)
+    # format df
+    df = format_vars(df)
 
-# Get database of training data attributes by site, class
-db_full, db_simple = dicts.train_database(df=train_df)
+    # create dictionary - create the dict corresponding to model type
+    df, label2target, columns2stratify = dicts.spec_dict(df, max_per_class, min_per_class)
 
-# write datasets to csv
-train_df.to_csv(output_path + "train_df.csv")
-val_df.to_csv(output_path + "val_df.csv")
-test_df.to_csv(output_path + "test_df.csv")
-db_full.to_csv(output_path + "db_full.csv")
-db_simple.to_csv(output_path + "db_simple.csv")
+    # reverse dictionary to read into pytorch
+    target2label = {t: l for l, t in label2target.items()}
+
+    # define number of classes
+    num_classes = max(label2target.values()) + 1
+
+    # split df into train/val/test sets
+    train_df, val_df, test_df = split_df(df, columns2stratify)
+
+    # set image dimensions for training
+    # TODO: determine ideal training w and h
+    w = 408
+    h = 307
+
+    # define data augmentation pipelines
+    # note augmentations as a string to save in model arguments
+    transforms = 'shear, rotate, huesat, brightcont, safecrop, hflip'
+
+    train_transform, val_transform = get_transforms(transforms)
+
+    # Load PyTorch Datasets
+    train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                             label2target=label2target, transform=train_transform)
+    val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                           label2target=label2target, transform=val_transform)
+
+    # define anchor boxes based on image size
+    anchor_sizes, anchor_gen = get_anchors(h=h)
+
+    # define model backbone
+    cnn_backbone = 'resnet'
+
+    # initialize model
+    model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen).to(device)
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    # define number of training epochs
+    num_epochs = 50
+
+    # define batch size
+    batch_size = 32
+    batch_size_org = batch_size
+
+    # boolean to use gradient accumulation
+    use_grad = True
+
+    # set denominator if using gradient accumulation
+    if use_grad:
+        # set number of gradients to accumulate before updating weights
+        grad_accumulation = 8
+        # effective batch size = batch_size * grad_accumulation
+        batch_size = batch_size_org // grad_accumulation
+
+    # set up class weights
+    sampler = get_class_weights(train_df)
+
+    # define dataloaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn,
+                              drop_last=True, sampler=sampler)
+    # do not oversample for validation, just for training
+    val_loader = DataLoader(val_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn, drop_last=True)
+
+    # define starting lr, wd, momentum
+    #TODO: review training results to confirm these
+    lr = 0.01
+    wd = 0.001
+    momentum = 0.9
+
+    # load optimizer
+    #TODO: create function to choose this based on optim
+    optim = 'SGD'
+    optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
+
+    # set learning rate scheduler
+    lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+
+    # make output directory and filepath
+    output_path = "./output/" + "fasterRCNN_" + cnn_backbone + "_" + \
+                  time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    # write model args to text file
+    write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size_org, optim, lr, wd, lr_scheduler, output_path)
+
+    # Get database of training data attributes by site, class
+    db_full, db_simple = dicts.train_database(df=train_df)
+
+    # write datasets to csv
+    train_df.to_csv(output_path + "train_df.csv")
+    val_df.to_csv(output_path + "val_df.csv")
+    test_df.to_csv(output_path + "test_df.csv")
+    db_full.to_csv(output_path + "db_full.csv")
+    db_simple.to_csv(output_path + "db_simple.csv")
 
 #######
 ## -- Train the Model
@@ -187,20 +267,35 @@ db_simple.to_csv(output_path + "db_simple.csv")
 # TODO: incorporate function for loading existing model weights when training iteratively
 best_model_wts = copy.deepcopy(model.state_dict())
 
-# define starting loss
-best_loss = float('inf')
+if resume:
+    # load existing losses
+    best_loss = checkpoint['best_loss']
+    loss_history = checkpoint['loss_history']
 
-# create empty list to save train/val losses
-loss_history = {
-    'train': [],
-    'val': []
-}
+    # load training time
+    training_time = checkpoint['training_time']
 
-# create empty list to save training time per epoch
-training_time = []
+    # load current epoch
+    epoch = checkpoint['epoch']
+
+else:
+    # define starting loss
+    best_loss = float('inf')
+
+    # create empty list to save train/val losses
+    loss_history = {
+        'train': [],
+        'val': []
+    }
+
+    # create empty list to save training time per epoch
+    training_time = []
+
+    # define starting epoch
+    epoch = range(num_epochs)[0]
 
 # training/validation loop
-for epoch in range(num_epochs):
+for epoch in range(epoch, num_epochs):
     # record start time
     t_start = time.time()
 
@@ -323,5 +418,7 @@ for epoch in range(num_epochs):
     save_checkpoint(checkpoint, checkpoint_file)
 
     print('Model trained for {} epochs'.format(epoch + 1))
+
+
 
 

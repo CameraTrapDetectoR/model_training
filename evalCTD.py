@@ -241,12 +241,11 @@ results_df = results_df.drop(['target'], axis = 1)
 # save results df to csv
 results_df.to_csv(output_path + "results_df.csv")
 
-
 # Save model weights for loading into R package
-path2weights = output_path + cnn_backbone + "_" + num_classes + "classes_weights_cpu.pth"
+path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
 torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
 
 # save model architecture for loading into R package
 model.eval()
 s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + num_classes + "classes_Arch_cpu.pt")
+torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classesj) + "classes_Arch_cpu.pt")

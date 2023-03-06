@@ -65,7 +65,7 @@ checkpoint_path = output_path + "checkpoint_50epochs.pth"
 checkpoint = torch.load(checkpoint_path, map_location=device)
 
 # Review loss history
-# loss_history = checkpoint['loss_history']
+loss_history = checkpoint['loss_history']
 # plot_losses(model_type, loss_history)
 #
 # # review training times
