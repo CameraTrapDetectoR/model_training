@@ -69,6 +69,31 @@ def orient_boxes(df):
 
     return df
 
+# filter out bboxes that touch image edges
+def filter_partials(df):
+    """
+    In an attempt to filter out images with incomplete animal features, remove images with bboxes
+    that touch any edge of an image
+    :param df:
+    :return: df with updated image list
+    """
+    # round bbox coordinates down to 2 decimal places
+    df_round = df.round({'XMin': 2, 'YMin': 2, 'XMax': 2, 'YMax': 2})
+    # collect list of detections where any coordinate touches image edge
+    df_part = df_round[(df_round['XMin'] == 0.00) |
+                       (df_round['XMax'] == 1.00) |
+                       (df_round['YMin'] == 0.00) |
+                       (df_round['YMax'] == 1.00)]
+    # get unique filenames
+    filenames = df_part.filename.unique()
+    # filter these images out of training data
+    df = df[~df['filename'].isin(filenames)]
+
+    return df
+
+
+
+
 # format variables
 def format_vars(df):
     """
