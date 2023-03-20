@@ -63,7 +63,7 @@ w = model_args['image width']
 h = model_args['image height']
 
 # load model checkpoint
-checkpoint_path = output_path + "checkpoint_14epochs.pth"
+checkpoint_path = output_path + "checkpoint_22epochs.pth"
 checkpoint = torch.load(checkpoint_path, map_location=device)
 
 # load dictionaries

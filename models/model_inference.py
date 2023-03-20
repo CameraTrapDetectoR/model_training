@@ -19,7 +19,7 @@ def plot_losses(model_type, cnn_backbone, loss_history, output_path):
     plt.plot(epochs, val_loss, 'b', label='Val Loss')
     plt.title(model_type + " " + cnn_backbone + " Faster R-CNN Loss History")
     plt.legend()
-    plt.save(output_path + "Loss_History_Plot.png")
+@    plt.save(output_path + "Loss_History_Plot.png")
 
 
 # filter predictions with low probability scores
