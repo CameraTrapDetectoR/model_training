@@ -67,8 +67,11 @@ if resume:
         model_args = {k: v for line in f for (k, v) in [line.strip().split(":")]}
 
     # load model checkpoint
-    checkpoint_path = output_path + "checkpoint_14epochs.pth"
+    checkpoint_path = output_path + "checkpoint_24epochs.pth"
     checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    #load model type
+    model_type = checkpoint['model_type']
 
     # define label dictionaries
     label2target = checkpoint['label2target']
@@ -80,7 +83,7 @@ if resume:
 
     # define data augmentation pipelines
     transforms = model_args['data augmentations']
-    train_transform, val_transform = get_transforms(transforms=transforms)
+    train_transform, val_transform = get_transforms(transforms=transforms, w=w, h=h)
 
     # load Pytorch datasets
     train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
@@ -131,13 +134,16 @@ if resume:
 
     # load hyperparameters
     lr = checkpoint['current_lr']
-    wd = int(model_args['weight decay'])
+    wd = float(model_args['weight decay'])
     momentum = 0.9
 
     # load optimizer
     optim = 'SGD'
     optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
     optimizer.load_state_dict(checkpoint['optimizer'])
+
+    # load lr scheduler
+    lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 
 
 
@@ -181,7 +187,7 @@ else:
     # note augmentations as a string to save in model arguments
     transforms = 'shear, rotate, huesat, brightcont, safecrop, hflip'
 
-    train_transform, val_transform = get_transforms(transforms)
+    train_transform, val_transform = get_transforms(transforms, w, h)
 
     # Load PyTorch Datasets
     train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
@@ -412,7 +418,7 @@ for epoch in range(epoch, num_epochs):
     training_time.append(elapsed)
 
     # save model state
-    checkpoint = create_checkpoint(model, optimizer, epoch, current_lr, lr_scheduler, loss_history,
+    checkpoint = create_checkpoint(model, optimizer, epoch, current_lr, loss_history,
                                    best_loss, model_type, num_classes, label2target, training_time)
     checkpoint_file = output_path + "checkpoint_" + str(epoch + 1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
