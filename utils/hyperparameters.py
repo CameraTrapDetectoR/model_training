@@ -29,7 +29,7 @@ def get_lr(optimizer):
         return param_group['lr']
 
 # def data augmentation pipelines
-def get_transforms(transforms):
+def get_transforms(transforms, w, h):
     #TODO: update so transforms is a list
     """
     Return data augmentation pipelines
