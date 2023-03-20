@@ -119,6 +119,8 @@ if unbalanced:
     df_filename_org = df_unique_filename
     # randomly select class to downsample
     downsize = random.sample(df.LabelName.unique().tolist(), k=1)[0]
+    #TODO: add downsize as a model arg
+
     # separate images from other classes
     df_bal = df_unique_filename[df_unique_filename['LabelName'] != downsize]
     # downsample images of that class to 10% of original size

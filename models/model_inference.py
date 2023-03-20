@@ -1,6 +1,25 @@
+# Functions for evaluating model
+
 # functions to evaluate model performace
 
 import torch
+import numpy as np
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+def plot_losses(model_type, cnn_backbone, loss_history, output_path):
+    # extract losses and number of epochs
+    train_loss = [loss for loss in loss_history['train']]
+    val_loss = [loss for loss in loss_history['val']]
+    epochs = range(1, len(train_loss) + 1)
+    # format and plot
+    plt.plot(epochs, train_loss, 'bo', label='Train Loss')
+    plt.plot(epochs, val_loss, 'b', label='Val Loss')
+    plt.title(model_type + " " + cnn_backbone + " Faster R-CNN Loss History")
+    plt.legend()
+@    plt.save(output_path + "Loss_History_Plot.png")
 
 
 # filter predictions with low probability scores
@@ -25,7 +44,8 @@ def filter_preds(output, threshold):
 
     return bbs, labels, confs
 
-def prepare_results(image_infos=image_infos, format='env', label2target=label2target):
+def prepare_results(pred_df=pred_df, target_df=target_df,
+                    image_infos=image_infos, format='env', label2target=label2target):
     """
     collects predictions and ground truth boxes into tensor dictionaries for calculating evaluation metrics
     :return:
@@ -78,3 +98,27 @@ def prepare_results(image_infos=image_infos, format='env', label2target=label2ta
         targets.append(target_i)
 
     return preds, targets
+
+def calculate_metrics(preds=preds, targets=targets, targt2label=target2label):
+    """
+
+    :return:
+    """
+    # initialize metric
+    metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
+    metric.update(preds, targets)
+    results = metric.compute()
+
+    # convert results to dataframe
+    results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().\
+        rename(columns={"index": "target"})
+
+    # add F1 score to results
+    results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
+                                  (results_df['map_per_class'] + results_df['mar_100_per_class']))
+
+    # Add class names to results
+    results_df['class_name'] = results_df['target'].map(target2label)
+    results_df = results_df.drop(['target'], axis=1)
+
+    return results_df

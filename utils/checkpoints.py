@@ -3,7 +3,7 @@ Functions to create, save, and load model checkpoints during model training and 
 """
 
 import torch
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 # write model arguments to text file
 def write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size, optim, lr, wd, lr_scheduler, output_path):
@@ -57,7 +57,7 @@ def load_args(output_path, filename="model_args.txt"):
     return model_args
 
 # create checkpoint
-def create_checkpoint(model, optimizer, epoch, current_lr, lr_scheduler, loss_history, best_loss, model_type, num_classes,label2target, training_time):
+def create_checkpoint(model, optimizer, epoch, current_lr, loss_history, best_loss, model_type, num_classes,label2target, training_time):
     '''
     creates checkpoint at the end of each epoch that can be used for continuing model training or
     for model evaluation
@@ -65,8 +65,7 @@ def create_checkpoint(model, optimizer, epoch, current_lr, lr_scheduler, loss_hi
     :param model: model (see model_args.txt for backbone)
     :param optimizer: optimizer parameters
     :param epoch: training epoch just completed
-    :param lr: current learning rate
-    :param lr_scheduler: learning rate scheduler
+    :param current_lr: current learning rate
     :param loss_history: train/val loss history
     :param best_loss: best loss
     :param model_type: model type being trained
@@ -79,7 +78,6 @@ def create_checkpoint(model, optimizer, epoch, current_lr, lr_scheduler, loss_hi
                   'optimizer': optimizer.state_dict(),
                   'epoch': epoch + 1,
                   'current_lr': current_lr,
-                  'scheduler': lr_scheduler.state_dict(),
                   'loss_history': loss_history,
                   'best_loss': best_loss,
                   'model_type': model_type,
