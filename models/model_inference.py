@@ -1,6 +1,5 @@
-# Functions for evaluating model
+# Functions for evaluating model performance
 
-# functions to evaluate model performace
 
 import torch
 import numpy as np
@@ -9,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def plot_losses(model_type, cnn_backbone, loss_history, output_path):
+def plot_losses(model_type, cnn_backbone, loss_history):
     # extract losses and number of epochs
     train_loss = [loss for loss in loss_history['train']]
     val_loss = [loss for loss in loss_history['val']]
@@ -19,7 +18,6 @@ def plot_losses(model_type, cnn_backbone, loss_history, output_path):
     plt.plot(epochs, val_loss, 'b', label='Val Loss')
     plt.title(model_type + " " + cnn_backbone + " Faster R-CNN Loss History")
     plt.legend()
-@    plt.save(output_path + "Loss_History_Plot.png")
 
 
 # filter predictions with low probability scores
@@ -45,7 +43,7 @@ def filter_preds(output, threshold):
     return bbs, labels, confs
 
 def prepare_results(pred_df=pred_df, target_df=target_df,
-                    image_infos=image_infos, format='env', label2target=label2target):
+                    image_infos=image_infos, label2target=label2target):
     """
     collects predictions and ground truth boxes into tensor dictionaries for calculating evaluation metrics
     :return:
@@ -60,19 +58,10 @@ def prepare_results(pred_df=pred_df, target_df=target_df,
         p_df = pred_df[pred_df['filename'] == image_infos[i]]
         t_df = target_df[target_df['filename'] == image_infos[i]]
 
-        # format boxes based on input
-        if format == 'csv':
-            # pred detections
-            pred_boxes = [box.strip('[').strip(']').strip(',') for box in p_df['bbox']]
-            pred_boxes = np.array([np.fromstring(box, sep=', ') for box in pred_boxes])
-            # ground truth boxes
-            target_boxes = [box.strip('[').strip(']').strip(', ') for box in t_df['bbox']]
-            target_boxes = np.array([np.fromstring(box, sep=', ') for box in target_boxes])
-        if format == 'env':
-            # pred detections
-            pred_boxes = [box for box in p_df['bbox']]
-            # ground truth boxes
-            target_boxes = [box for box in t_df['bbox']]
+        # pred detections
+        pred_boxes = [box for box in p_df['bbox']]
+        # ground truth boxes
+        target_boxes = [box for box in t_df['bbox']]
 
 
         # format scores and labels
@@ -99,10 +88,11 @@ def prepare_results(pred_df=pred_df, target_df=target_df,
 
     return preds, targets
 
-def calculate_metrics(preds=preds, targets=targets, targt2label=target2label):
+def calculate_metrics(preds=preds, targets=targets, target2label=target2label):
     """
+    calculate evaluation metrics for test results
 
-    :return:
+    :return: classwise results in df
     """
     # initialize metric
     metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)

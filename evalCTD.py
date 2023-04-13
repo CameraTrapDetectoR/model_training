@@ -7,6 +7,7 @@ import torch
 from PIL import ImageFile
 import numpy as np
 import albumentations as A
+from models.model_inference import plot_losses
 from albumentations.pytorch.transforms import ToTensorV2
 from utils.data_setload import DetectDataset
 from torch.utils.data import DataLoader
@@ -63,12 +64,23 @@ w = model_args['image width']
 h = model_args['image height']
 
 # load model checkpoint
-checkpoint_path = output_path + "checkpoint_22epochs.pth"
+checkpoint_path = output_path + "checkpoint_50epochs.pth"
 checkpoint = torch.load(checkpoint_path, map_location=device)
 
 # load dictionaries
 label2target = checkpoint['label2target']
 target2label = {t: l for l, t in label2target.items()}
+
+# plot loss history
+# loss_history = checkpoint['loss_history']
+# train_loss = [loss for loss in loss_history['train']]
+# val_loss = [loss for loss in loss_history['val']]
+# epochs = range(1, len(train_loss) + 1)
+# # format and plot
+# plt.plot(epochs, train_loss, 'bo', label='Train Loss')
+# plt.plot(epochs, val_loss, 'b', label='Val Loss')
+# plt.title(model_type + " " + cnn_backbone + " Faster R-CNN Loss History")
+# plt.legend()
 
 # reload anchor generator
 anchor_sizes, anchor_gen = get_anchors(h=h)
@@ -241,6 +253,12 @@ results_df = results_df.drop(['target'], axis = 1)
 # save results df to csv
 results_df.to_csv(output_path + "results_df.csv")
 
+# re-initiate the model on CPU so it can be loaded into R package
+device = 'cpu'
+model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
+model.load_state_dict(checkpoint['state_dict'])
+model.to(device)
+
 # Save model weights for loading into R package
 path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
 torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
@@ -248,4 +266,4 @@ torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
 # save model architecture for loading into R package
 model.eval()
 s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classesj) + "classes_Arch_cpu.pt")
+torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pt")

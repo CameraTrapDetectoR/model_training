@@ -57,7 +57,8 @@ def load_args(output_path, filename="model_args.txt"):
     return model_args
 
 # create checkpoint
-def create_checkpoint(model, optimizer, epoch, current_lr, loss_history, best_loss, model_type, num_classes,label2target, training_time):
+def create_checkpoint(model, optimizer, epoch, current_lr, loss_history, best_loss,
+                      model_type, num_classes,label2target, training_time, pred_df, results_df):
     '''
     creates checkpoint at the end of each epoch that can be used for continuing model training or
     for model evaluation
@@ -72,6 +73,8 @@ def create_checkpoint(model, optimizer, epoch, current_lr, loss_history, best_lo
     :param num_classes: number classes in the model
     :param label2target: label encoder dictionary
     :param training_time: list of training times (train + val) per epoch
+    :param pred_df: df of test predictions
+    :param results_df: df of evaluation metrics on test df
     :return: checkpoint
     '''
     checkpoint = {'state_dict': model.state_dict(),
@@ -83,7 +86,9 @@ def create_checkpoint(model, optimizer, epoch, current_lr, loss_history, best_lo
                   'model_type': model_type,
                   'num_classes': num_classes,
                   'label2target': label2target,
-                  'training_time': training_time}
+                  'training_time': training_time,
+                  'pred_df': pred_df,
+                  'results_df': results_df}
     return checkpoint
 
 # save checkpoint
