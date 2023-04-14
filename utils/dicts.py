@@ -314,7 +314,8 @@ def encode_labels(label2target=label2target, output_path = output_path):
     # convert sorted list back to dict
     label_encoder = dict(sorted_labels)
 
-    #TODO: remove special characters
+    # remove special characters
+    label_encoder = {x.replace("'", ''): v for x, v in label_encoder.items()}
 
     # write encoder to text file
     with open(output_path + '/label_encoder.txt', 'w') as f:
