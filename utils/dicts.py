@@ -301,3 +301,24 @@ def train_database(df):
     db_db.loc[db_db.duplicated('Class'), 'Class'] = ''
 
     return db_full, db_db
+
+def encode_labels(label2target=label2target, output_path = output_path):
+    """
+    Reorder label2target by numerical value; export for loading into R package
+    :param label2target: dictionary of labels and encoders
+    :return: reordered label2target
+    """
+    # sort label2target by value
+    sorted_labels = sorted(label2target.items(), key=lambda x:x[1])
+
+    # convert sorted list back to dict
+    label_encoder = dict(sorted_labels)
+
+    #TODO: remove special characters
+
+    # write encoder to text file
+    with open(output_path + '/label_encoder.txt', 'w') as f:
+        for key, value in label_encoder.items():
+            f.write('%s:%s\n' % (key, value))
+
+    return label_encoder
