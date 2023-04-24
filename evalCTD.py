@@ -266,4 +266,4 @@ torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
 # save model architecture for loading into R package
 model.eval()
 s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pt")
+torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")

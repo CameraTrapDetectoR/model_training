@@ -516,20 +516,20 @@ for epoch in range(epoch, num_epochs):
 #######
 ## -- Export Model Weights and Arch
 #######
-# re-initiate the model on CPU so it can be loaded into R package
-device = 'cpu'
-# model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
-# model.load_state_dict(checkpoint['state_dict'])
-model.to(device)
-
-# Save model weights for loading into R package
-path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
-torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
-
-# save model architecture for loading into R package
-model.eval()
-s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")
+# # re-initiate the model on CPU so it can be loaded into R package
+# device = 'cpu'
+# # model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
+# # model.load_state_dict(checkpoint['state_dict'])
+# model.to(device)
+#
+# # Save model weights for loading into R package
+# path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
+# torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
+#
+# # save model architecture for loading into R package
+# model.eval()
+# s = torch.jit.script(model.to(device='cpu'))
+# torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")
 
 # save label encoder for loading into R package
 dicts.encode_labels(label2target, output_path)
