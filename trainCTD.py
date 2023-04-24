@@ -16,6 +16,11 @@ from torch.utils.data import DataLoader
 from utils.hyperparameters import get_anchors, get_transforms
 from models.backbones import load_fasterrcnn
 
+from torchvision.ops import nms
+
+from models.model_inference import prepare_results, \
+    calculate_metrics
+
 from torch.optim import SGD, lr_scheduler
 from utils.hyperparameters import get_lr
 
@@ -67,7 +72,7 @@ if resume:
         model_args = {k: v for line in f for (k, v) in [line.strip().split(":")]}
 
     # load model checkpoint
-    checkpoint_path = output_path + "checkpoint_24epochs.pth"
+    checkpoint_path = output_path + "checkpoint_50epochs.pth"
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
     #load model type
@@ -396,6 +401,88 @@ for epoch in range(epoch, num_epochs):
     # record validation loss
     loss_history['val'].append(epoch_val_loss)
 
+    ## -- Run evaluation on test set
+    # define test image list
+    test_infos = test_df.filename.unique()
+
+    # create placeholders for targets and predictions
+    pred_df = []
+    target_df = []
+
+    # deploy model on test images
+    model.eval()
+    for i in tqdm(range(len(test_infos))):
+        # define dataset and dataloader
+        dfi = test_df[test_df['filename'] == test_infos[i]]
+        dsi = DetectDataset(df=dfi, image_dir=IMAGE_ROOT, w=w, h=h, label2target=label2target, transform=val_transform)
+        dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
+
+        # extract image, bbox, and label info
+        input, target = next(iter(dli))
+        tbs = dsi[0][1]['boxes']
+        image = list(image.to(device) for image in input)
+
+        # run input through the model
+        output = model(image)[0]
+
+        # extract prediction bboxes, labels, scores above score_thresh
+        # format prediction data
+        bbs = output['boxes'].cpu().detach()
+        labels = output['labels'].cpu().detach()
+        confs = output['scores'].cpu().detach()
+
+        # id indicies of tensors to include in evaluation
+        idx = torch.where(confs > 0.1)
+
+        # filter to predictions that meet the threshold
+        bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+
+        # perform non-maximum suppression on remaining predictions
+        # set iou threshold low since training data does not contain overlapping ground truth boxes
+        ixs = nms(bbs, confs, iou_threshold=0.1)
+
+        bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
+
+        # format predictions
+        bbs = bbs.tolist()
+        confs = confs.tolist()
+        labels = labels.tolist()
+
+        # save predictions and targets
+        if len(bbs) == 0:
+            pred_df_i = pd.DataFrame({
+                'filename': test_infos[i],
+                'file_id': test_infos[i][:-4],
+                'class_name': 'empty',
+                'confidence': 1,
+                'bbox': [(0, 0, w, h)]
+            })
+        else:
+            pred_df_i = pd.DataFrame({
+                'filename': test_infos[i],
+                'file_id': test_infos[i][:-4],
+                'class_name': [target2label[a] for a in labels],
+                'confidence': confs,
+                'bbox': bbs
+            })
+        tar_df_i = pd.DataFrame({
+            'filename': test_infos[i],
+            'file_id': test_infos[i][:-4],
+            'class_name': dfi['LabelName'].tolist(),
+            'bbox': tbs.tolist()
+        })
+        pred_df.append(pred_df_i)
+        target_df.append(tar_df_i)
+
+    # concatenate preds and targets into dfs
+    pred_df = pd.concat(pred_df).reset_index(drop=True)
+    target_df = pd.concat(target_df).reset_index(drop=True)
+
+    preds, targets = prepare_results(pred_df=pred_df, target_df=target_df,
+                    image_infos=test_infos, label2target=label2target)
+
+    results_df = calculate_metrics(preds=preds, targets=targets, target2label=target2label)
+
     ## -- UPDATE MODEL
 
     # record model weights based on val_loss
@@ -419,12 +506,32 @@ for epoch in range(epoch, num_epochs):
 
     # save model state
     checkpoint = create_checkpoint(model, optimizer, epoch, current_lr, loss_history,
-                                   best_loss, model_type, num_classes, label2target, training_time)
+                                   best_loss, model_type, num_classes, label2target, training_time,
+                                   pred_df, results_df)
     checkpoint_file = output_path + "checkpoint_" + str(epoch + 1) + "epochs.pth"
     save_checkpoint(checkpoint, checkpoint_file)
 
     print('Model trained for {} epochs'.format(epoch + 1))
 
+#######
+## -- Export Model Weights and Arch
+#######
+# # re-initiate the model on CPU so it can be loaded into R package
+# device = 'cpu'
+# # model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
+# # model.load_state_dict(checkpoint['state_dict'])
+# model.to(device)
+#
+# # Save model weights for loading into R package
+# path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
+# torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
+#
+# # save model architecture for loading into R package
+# model.eval()
+# s = torch.jit.script(model.to(device='cpu'))
+# torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")
 
+# save label encoder for loading into R package
+dicts.encode_labels(label2target, output_path)
 
-
+# END
