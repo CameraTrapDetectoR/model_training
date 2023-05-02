@@ -76,22 +76,27 @@ class DetectDataset(Dataset):
         return len(self.image_infos)
 
 
-def get_class_weights(train_df):
+def get_class_weights(train_df, model_type):
     """
     introduce class weights to oversample minority classes
     and avoid overfitting majroity classes
     :param train_df: train df
+    :param model_type: model_type
     :return: weighted random sampler to pass to dataloader
     """
-    #TODO: oversample pig images for pig-only model
-
+    
     # collect class counts in a dataframe
     s = dict(Counter(train_df['LabelName']))
     sdf = pd.DataFrame.from_dict(s, orient='index').reset_index()
     sdf.columns = ['LabelName', 'counts']
 
     # take the inverse to define class weights; smaller counts -> higher weights
-    sdf['weights'] = 1/sdf['counts']
+    ## perform additional oversampling for pig_only model
+    if model_type == 'pig_only':
+        sdf['weights'] = [0.5, 0.5]
+    else:
+        sdf['weights'] = 1/sdf['counts']
+
     swts = dict(zip(sdf.LabelName, sdf.weights))
     train_unique = train_df.drop_duplicates(subset='filename', keep='first')
 

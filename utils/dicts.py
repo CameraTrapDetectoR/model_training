@@ -1,6 +1,7 @@
 # functions to write label dictionaries and create representative samples
 
 import pandas as pd
+import numpy as np
 from collections import Counter
 
 def gen_dict(df):
@@ -217,36 +218,53 @@ def pig_dict(df, max_per_class, min_per_class):
     :return: sample df, label dict, col to stratify over test/val split
     """
 
-    # list families with fewer images than category min
-    too_few = list({k for (k, v) in Counter(df['family']).items() if v < min_per_class})
-    # remove general bird images
-    too_few.append('Bird')
-    df = df[~df['family'].isin(too_few)]
-    # remove rows if family is nan
-    df = df[df['family'].notna()]
+     # list species with fewer images than category min
+    too_few = list({k for (k, v) in Counter(df['common.name']).items() if v < min_per_class})
+
+    # remove mammals that are too small to be mistaken for pigs
+    too_small = ['squirrel_spp', 'American_Badger', 'American_Marten', 'American_Mink',
+                 'Jackrabbit', 'Prairie_Dog', 'Chipmunk', 'Cottontail_Rabbit', 'Spotted_Skunk',
+                 'Fisher', 'Mouse_Rat', 'Nine-Banded_Armadillo', 'North_American_Beaver',
+                 'North_American_Porcupine', 'Polar_Bear', 'Snowshoe_Hare', 'Striped_Skunk', 
+                 'Woodchuck', 'Yellow-Bellied_Marmot']
+
+    # include these species despite small sample sizes
+    always_include = ['White-nosed_Coati', 'Collared_Peccary', 'Jaguarundi', 'Margay', 'Jaguar', 'Ocelot']
+    too_few = [e for e in too_few if e not in always_include]
+
+    # filter exclusions out of df
+    df = df[~df['common.name'].isin(too_few)]
+    df = df[~df['common.name'].isin(too_small)]
+
+    #Remove birds and reptiles
+    df = df[~df['class']== 'Reptilia']
+    df = df[~df['class']== 'Aves']
+
     # save original df to filter through later
     original_df = df
-    # list families where all images are included
-    fewerMax = list({k for (k, v) in Counter(df['family']).items() if v <= max_per_class})
-    # list families with more images than category max
-    overMax = list({k for (k, v) in Counter(df['family']).items() if v > max_per_class})
+
+    # list species with fewer than max cat images
+    fewerMax = list({k for (k, v) in Counter(df['common.name']).items() if v <= max_per_class})
+    # list species with greater images than max per category
+    overMax = list({k for (k, v) in Counter(df['common.name']).items() if v > max_per_class})
+
     # shuffle rows before sampling
     df = df.sample(frac=1, random_state=1).reset_index(drop=True)
-
-    # setup for representative sampling across database
+    # initiate representative sample df
     balanced_df = pd.DataFrame(columns=list(df.columns))
-    # set db threshold for images to include
-    thresh = 100
-    # loop through families with num_boxes greater than max_per_category
+
+    # set threshold for db images to include
+    thresh = 50
+    # loop over species with num images greater than max per category
     for label in overMax:
         temp = balanced_df
-        subset_df = df[df['family'] == label]
+        subset_df = df[df['common.name'] == label]
         # list db with image numbers above and below threshold
         fewer = list({k for (k, v) in Counter(subset_df['database']).items() if v <= thresh})
         greater = list({k for (k, v) in Counter(subset_df['database']).items() if v > thresh})
         # add all images for db with image counts below threshold
         lt_df = subset_df[subset_df['database'].isin(fewer)]
-        # sample equally from remaining db until total images reaches max per category
+        # sample equally from remaining db until total images reaches max per species
         size = max_per_class - lt_df.shape[0]
         ht_subset = subset_df[subset_df['database'].isin(greater)]
         ht_df = pd.DataFrame(columns=list(df.columns))
@@ -256,25 +274,28 @@ def pig_dict(df, max_per_class, min_per_class):
             ht_df = ht_df.drop_duplicates()
             if ht_df.shape[0] > size:
                 break
-        # add family sample to balanced df
-        fam_df = pd.concat([lt_df, ht_df], ignore_index=True)
-        balanced_df = pd.concat([temp, fam_df], ignore_index=True)
-    # combine dfs, including all available pig images
-    df = pd.concat([balanced_df, df[df['family'].isin(fewerMax)], df[df['family'] == 'Suidae']]).drop_duplicates()
-    # locate annotations within df
+        # add species sample to balanced df
+        spec_df = pd.concat([lt_df, ht_df], ignore_index=True)
+        balanced_df = pd.concat([temp, spec_df], ignore_index=True)
+
+    # combine data and drop duplicates
+    df = pd.concat([balanced_df, df[df['common.name'].isin(fewerMax)]])
+    df = df.drop_duplicates()
+
+    # locate images within df
     df = original_df.loc[original_df['filename'].isin(df['filename'])]
 
-    # create dictionary of family labels
-    label2target = {l: t + 1 for t, l in enumerate(df['family'].unique())}
-    # set background class
-    label2target['empty'] = 0
+    # create dictionary of species labels
+    label2target = {'empty':0, 'Wild_Pig':1, 'Not_Pig':2}
     pd.options.mode.chained_assignment = None
 
     # standardize label name
-    df['LabelName'] = df['family']
-    columns2stratify = ['family']
+    df['LabelName'] = np.where(df['common.name'] == 'Wild_Pig', 'Wild_Pig', 'Not_Pig')
+    # stratify across species for train/val split
+    columns2stratify = ['common.name']
 
     return df, label2target, columns2stratify
+
 
 def train_database(df):
     """

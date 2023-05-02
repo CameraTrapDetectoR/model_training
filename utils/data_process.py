@@ -93,7 +93,6 @@ def filter_partials(df):
 
 
 
-
 # format variables
 def format_vars(df):
     """
@@ -137,7 +136,7 @@ def format_vars(df):
 def split_df(df, columns2stratify):
     """
     Takes df, columns2stratify output from the wrangle_df function and splits the dataset by the stratified column.
-    70% of total data is allocated to training, while 15% each is allocated to validation and testing.
+    70% of total data is allocated to training, 20% allocated to validation, and 10% allocated to out-of-sample test
     :param df: sample df
     :param columns2stratify: column to stratify over sampling to preserve representation across split dfs
     """
@@ -150,7 +149,7 @@ def split_df(df, columns2stratify):
     train_df = df[df['filename'].isin(trn_ids)].reset_index(drop=True)
     rem_df = df[df['filename'].isin(rem_ids)].reset_index(drop=True)
     rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
-    # split remaining 30% evenly between validation and test sets
+    # split remaining 30% with a 2/1 validation/test split
     val_ids, test_ids = train_test_split(rem_unique_filename['filename'], shuffle=True,
                                          stratify=rem_unique_filename[columns2stratify],
                                          test_size=0.33, random_state=22)
