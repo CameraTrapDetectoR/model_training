@@ -155,7 +155,7 @@ if resume:
 # model setup for new training
 else:
     # Set model type: options = 'general', 'family', 'species', 'pig_only'
-    model_type = 'species'
+    model_type = 'pig_only'
 
     max_per_class, min_per_class = class_range(model_type)
 
@@ -172,7 +172,10 @@ else:
     df = format_vars(df)
 
     # create dictionary - create the dict corresponding to model type
-    df, label2target, columns2stratify = dicts.spec_dict(df, max_per_class, min_per_class)
+    if model_type == 'species':
+        df, label2target, columns2stratify = dicts.spec_dict(df, max_per_class, min_per_class)
+    if model_type == 'pig_only':
+        df, label2target, columns2stratify = dicts.pig_dict(df, max_per_class, min_per_class)
 
     # reverse dictionary to read into pytorch
     target2label = {t: l for l, t in label2target.items()}
