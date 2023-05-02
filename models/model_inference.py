@@ -42,8 +42,7 @@ def filter_preds(output, threshold):
 
     return bbs, labels, confs
 
-def prepare_results(pred_df=pred_df, target_df=target_df,
-                    image_infos=image_infos, label2target=label2target):
+def prepare_results(pred_df, target_df, image_infos, label2target):
     """
     collects predictions and ground truth boxes into tensor dictionaries for calculating evaluation metrics
     :return:
@@ -88,7 +87,7 @@ def prepare_results(pred_df=pred_df, target_df=target_df,
 
     return preds, targets
 
-def calculate_metrics(preds=preds, targets=targets, target2label=target2label):
+def calculate_metrics(preds, targets, target2label):
     """
     calculate evaluation metrics for test results
 

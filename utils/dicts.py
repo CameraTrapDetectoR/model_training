@@ -237,8 +237,8 @@ def pig_dict(df, max_per_class, min_per_class):
     df = df[~df['common.name'].isin(too_small)]
 
     #Remove birds and reptiles
-    df = df[~df['class']== 'Reptilia']
-    df = df[~df['class']== 'Aves']
+    df = df[df['class'] !='Reptilia']
+    df = df[df['class'] != 'Aves']
 
     # save original df to filter through later
     original_df = df
@@ -323,7 +323,7 @@ def train_database(df):
 
     return db_full, db_db
 
-def encode_labels(label2target=label2target, output_path = output_path):
+def encode_labels(label2target, output_path):
     """
     Reorder label2target by numerical value; export for loading into R package
     :param label2target: dictionary of labels and encoders
