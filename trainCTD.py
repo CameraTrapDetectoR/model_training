@@ -231,7 +231,7 @@ else:
         batch_size = batch_size_org // grad_accumulation
 
     # set up class weights
-    sampler = get_class_weights(train_df)
+    sampler = get_class_weights(train_df, model_type)
 
     # define dataloaders
     train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn,
@@ -254,7 +254,7 @@ else:
     lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
 
     # make output directory and filepath
-    output_path = "./output/" + "fasterRCNN_" + cnn_backbone + "_" + \
+    output_path = "./output/" + model_type + "_fasterRCNN_" + cnn_backbone + "_" + \
                   time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
     if not os.path.exists(output_path):
         os.makedirs(output_path)
