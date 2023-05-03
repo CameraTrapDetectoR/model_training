@@ -6,6 +6,7 @@ import numpy as np
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 import pandas as pd
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 
 def plot_losses(model_type, cnn_backbone, loss_history):
