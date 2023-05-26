@@ -1,5 +1,5 @@
 """
-Script  to evaluate updated CameraTrapDetectoR model
+Script to deploy CameraTrapDetectoR model on out of sample data
 """
 
 import os
@@ -9,14 +9,14 @@ import numpy as np
 import albumentations as A
 from models.model_inference import plot_losses
 from albumentations.pytorch.transforms import ToTensorV2
-from utils.data_setload import DetectDataset
-from torch.utils.data import DataLoader
 from utils.hyperparameters import get_anchors
 from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
 import pandas as pd
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchvision.transforms import ToTensor
+import cv2
 
 
 #######
@@ -31,7 +31,7 @@ else:
 
 # Set paths
 if local:
-    IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
+    IMAGE_ROOT = 'G:/!ML_training_datasets'
     os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
 else:
     IMAGE_ROOT = "/90daydata/cameratrapdetector/trainimages"
@@ -56,38 +56,28 @@ model_args['anchor box sizes'] = tuple(eval(model_args['anchor box sizes']))
 cnn_backbone = model_args['backbone']
 
 # load image info
-df = pd.read_csv(output_path + "test_df.csv")
-image_infos = df.filename.unique()
+#TODO: make this easily changeable
+
+# set image directory
+IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS02'
+# create holder for file names
+image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn 
+               if os.path.splitext(f)[1].lower() == '.jpg']
 
 # define image dimensions
 w = model_args['image width']
 h = model_args['image height']
 
 # load model checkpoint
-checkpoint_path = output_path + "checkpoint_50epochs.pth"
+checkpoint_path = output_path + "50epochs/checkpoint_50epochs.pth"
 checkpoint = torch.load(checkpoint_path, map_location=device)
 
 # load dictionaries
 label2target = checkpoint['label2target']
 target2label = {t: l for l, t in label2target.items()}
 
-# plot loss history
-# loss_history = checkpoint['loss_history']
-# train_loss = [loss for loss in loss_history['train']]
-# val_loss = [loss for loss in loss_history['val']]
-# epochs = range(1, len(train_loss) + 1)
-# # format and plot
-# plt.plot(epochs, train_loss, 'bo', label='Train Loss')
-# plt.plot(epochs, val_loss, 'b', label='Val Loss')
-# plt.title(model_type + " " + cnn_backbone + " Faster R-CNN Loss History")
-# plt.legend()
-
 # reload anchor generator
 anchor_sizes, anchor_gen = get_anchors(h=h)
-
-# define validation augmentation pipeline
-val_transform = A.Compose([ToTensorV2()],
-                          bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']),)
 
 # initiate model
 cnn_backbone = 'resnet'
@@ -104,166 +94,174 @@ model.to(device)
 
 # create placeholders for targets and predictions
 pred_df = []
-target_df = []
 
 # deploy model on test images
-model.eval()
-for i in tqdm(range(len(image_infos))):
-    # define dataset and dataloader
-    dfi = df[df['filename'] == image_infos[i]]
-    dsi = DetectDataset(df=dfi, image_dir=IMAGE_ROOT, w=w, h=h, label2target=label2target, transform=val_transform)
-    dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
+with torch.no_grad():
+    model.eval()
+    for i in tqdm(range(len(image_infos))):
+        # set image path
+        img_path = image_infos[i]
+        # open image
+        img = cv2.imread(img_path)
+        # reformat color channels
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # resize image so bboxes can also be converted
+        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+        img = img.astype(np.float32) / 255.
+        # convert array to tensor 
+        img = torch.from_numpy(img)
+        # shift channels to be compatible with model input
+        image = img.permute(2, 0, 1)
+        image = image.unsqueeze_(0)
+        # send input to CUDA if available
+        image = image.to(device)
 
-    # extract image, bbox, and label info
-    input, target = next(iter(dli))
-    tbs = dsi[0][1]['boxes']
-    image = list(image.to(device) for image in input)
+        # run input through the model
+        output = model(image)[0]
 
-    # run input through the model
-    output = model(image)[0]
+        # extract prediction bboxes, labels, scores above score_thresh
+        # format prediction data
+        bbs = output['boxes'].cpu().detach()
+        labels = output['labels'].cpu().detach()
+        confs = output['scores'].cpu().detach()
 
-    # extract prediction bboxes, labels, scores above score_thresh
-    # format prediction data
-    bbs = output['boxes'].cpu().detach()
-    labels = output['labels'].cpu().detach()
-    confs = output['scores'].cpu().detach()
+        # id indicies of tensors to include in evaluation
+        idx = torch.where(confs > 0.01)
 
-    # id indicies of tensors to include in evaluation
-    idx = torch.where(confs > 0.1)
+        # filter to predictions that meet the threshold
+        bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
 
-    # filter to predictions that meet the threshold
-    bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+        # perform non-maximum suppression on remaining predictions
+        # set iou threshold low since training data does not contain overlapping ground truth boxes
+        ixs = nms(bbs, confs, iou_threshold=0.1)
 
-    # perform non-maximum suppression on remaining predictions
-    # set iou threshold low since training data does not contain overlapping ground truth boxes
-    ixs = nms(bbs, confs, iou_threshold=0.1)
+        bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
-    bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
+        # format predictions
+        bbs = bbs.tolist()
+        confs = confs.tolist()
+        labels = labels.tolist()
 
-    # format predictions
-    bbs = bbs.tolist()
-    confs = confs.tolist()
-    labels = labels.tolist()
+        # save predictions and targets
+        if len(bbs) == 0:
+            pred_df_i = pd.DataFrame({
+                'filename': image_infos[i],
+                'file_id': image_infos[i][:-4],
+                'class_name': 'empty',
+                'confidence': 1,
+                'bbox': [(0, 0, w, h)]
+            })
+        else:
+            pred_df_i = pd.DataFrame({
+                'filename': image_infos[i],
+                'file_id': image_infos[i][:-4],
+                'class_name': [target2label[a] for a in labels],
+                'confidence': confs,
+                'bbox': bbs
+            })
+        # tar_df_i = pd.DataFrame({
+        #     'filename': image_infos[i],
+        #     'file_id': image_infos[i][:-4],
+        #     'class_name': dfi['LabelName'].tolist(),
+        #     'bbox': tbs.tolist()
+        # })
+        pred_df.append(pred_df_i)
+        # target_df.append(tar_df_i)
 
-    # save predictions and targets
-    if len(bbs) == 0:
-        pred_df_i = pd.DataFrame({
-            'filename': image_infos[i],
-            'file_id': image_infos[i][:-4],
-            'class_name': 'empty',
-            'confidence': 1,
-            'bbox': [(0, 0, w, h)]
-        })
-    else:
-        pred_df_i = pd.DataFrame({
-            'filename': image_infos[i],
-            'file_id': image_infos[i][:-4],
-            'class_name': [target2label[a] for a in labels],
-            'confidence': confs,
-            'bbox': bbs
-        })
-    tar_df_i = pd.DataFrame({
-        'filename': image_infos[i],
-        'file_id': image_infos[i][:-4],
-        'class_name': dfi['LabelName'].tolist(),
-        'bbox': tbs.tolist()
-    })
-    pred_df.append(pred_df_i)
-    target_df.append(tar_df_i)
 
 # concatenate preds and targets into dfs
 pred_df = pd.concat(pred_df).reset_index(drop=True)
-target_df = pd.concat(target_df).reset_index(drop=True)
+# target_df = pd.concat(target_df).reset_index(drop=True)
 
 # save prediction and target dfs to csv
-target_df.to_csv(output_path + "target_df.csv")
-pred_df.to_csv(output_path + "pred_df.csv")
+# target_df.to_csv(output_path + "target_df.csv")
+pred_df.to_csv(IMAGE_PATH + "pred_df.csv")
 
 #######
 ## -- Calculate Evaluation Metrics
 #######
 
-# extract predicted bboxes, confidence scores, and labels
-preds = []
-targets = []
+# # extract predicted bboxes, confidence scores, and labels
+# preds = []
+# targets = []
 
-# create list of dictionaries for targets, preds for each image
-for i in tqdm(range(len(image_infos))):
-    # extract predictions and targets for an image
-    p_df = pred_df[pred_df['filename'] == image_infos[i]]
-    t_df = target_df[target_df['filename'] == image_infos[i]]
+# # create list of dictionaries for targets, preds for each image
+# for i in tqdm(range(len(image_infos))):
+#     # extract predictions and targets for an image
+#     p_df = pred_df[pred_df['filename'] == image_infos[i]]
+#     t_df = target_df[target_df['filename'] == image_infos[i]]
 
-    # # format boxes based on input
-    # if format == 'csv':
-    #     # pred detections
-    #     pred_boxes = [box.strip('[').strip(']').strip(',') for box in p_df['bbox']]
-    #     pred_boxes = np.array([np.fromstring(box, sep=', ') for box in pred_boxes])
-    #     # ground truth boxes
-    #     target_boxes = [box.strip('[').strip(']').strip(', ') for box in t_df['bbox']]
-    #     target_boxes = np.array([np.fromstring(box, sep=', ') for box in target_boxes])
-    # if format == 'env':
-    #     # pred detections
-    #     pred_boxes = [box for box in p_df['bbox']]
-    #     # ground truth boxes
-    #     target_boxes = [box for box in t_df['bbox']]
+#     # # format boxes based on input
+#     # if format == 'csv':
+#     #     # pred detections
+#     #     pred_boxes = [box.strip('[').strip(']').strip(',') for box in p_df['bbox']]
+#     #     pred_boxes = np.array([np.fromstring(box, sep=', ') for box in pred_boxes])
+#     #     # ground truth boxes
+#     #     target_boxes = [box.strip('[').strip(']').strip(', ') for box in t_df['bbox']]
+#     #     target_boxes = np.array([np.fromstring(box, sep=', ') for box in target_boxes])
+#     # if format == 'env':
+#     #     # pred detections
+#     #     pred_boxes = [box for box in p_df['bbox']]
+#     #     # ground truth boxes
+#     #     target_boxes = [box for box in t_df['bbox']]
 
-    # pred boxes
-    pred_boxes = [box for box in p_df['bbox']]
-    # ground truth boxes
-    target_boxes = [box for box in t_df['bbox']]
+#     # pred boxes
+#     pred_boxes = [box for box in p_df['bbox']]
+#     # ground truth boxes
+#     target_boxes = [box for box in t_df['bbox']]
 
-    # format scores and labels
-    pred_scores = p_df['confidence'].values.tolist()
-    pred_labels = p_df['class_name'].map(label2target)
-    target_labels = t_df['class_name'].map(label2target)
+#     # format scores and labels
+#     pred_scores = p_df['confidence'].values.tolist()
+#     pred_labels = p_df['class_name'].map(label2target)
+#     target_labels = t_df['class_name'].map(label2target)
 
-    # convert preds to dictionary of tensors
-    pred_i = {
-        'boxes': torch.tensor(pred_boxes),
-        'scores': torch.tensor(pred_scores),
-        'labels': torch.tensor(pred_labels.values)
-    }
+#     # convert preds to dictionary of tensors
+#     pred_i = {
+#         'boxes': torch.tensor(pred_boxes),
+#         'scores': torch.tensor(pred_scores),
+#         'labels': torch.tensor(pred_labels.values)
+#     }
 
-    # convert targets to tensor dictionary
-    target_i = {
-        'boxes': torch.tensor(target_boxes),
-        'labels': torch.tensor(target_labels.values)
-    }
+#     # convert targets to tensor dictionary
+#     target_i = {
+#         'boxes': torch.tensor(target_boxes),
+#         'labels': torch.tensor(target_labels.values)
+#     }
 
-    # add current image preds and targets to dictionary list
-    preds.append(pred_i)
-    targets.append(target_i)
+#     # add current image preds and targets to dictionary list
+#     preds.append(pred_i)
+#     targets.append(target_i)
 
-# initialize metric
-metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
-metric.update(preds, targets)
-results = metric.compute()
+# # initialize metric
+# metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
+# metric.update(preds, targets)
+# results = metric.compute()
 
-# convert results to dataframe
-results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().rename(columns={"index": "target"})
+# # convert results to dataframe
+# results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().rename(columns={"index": "target"})
 
-# add F1 score to results
-results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
-                              (results_df['map_per_class'] + results_df['mar_100_per_class']))
+# # add F1 score to results
+# results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
+#                               (results_df['map_per_class'] + results_df['mar_100_per_class']))
 
-# Add class names to results
-results_df['class_name'] = results_df['target'].map(target2label)
-results_df = results_df.drop(['target'], axis = 1)
+# # Add class names to results
+# results_df['class_name'] = results_df['target'].map(target2label)
+# results_df = results_df.drop(['target'], axis = 1)
 
-# save results df to csv
-results_df.to_csv(output_path + "results_df.csv")
+# # save results df to csv
+# results_df.to_csv(output_path + "results_df.csv")
 
-# re-initiate the model on CPU so it can be loaded into R package
-device = 'cpu'
-model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
-model.load_state_dict(checkpoint['state_dict'])
-model.to(device)
+# # re-initiate the model on CPU so it can be loaded into R package
+# device = 'cpu'
+# model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
+# model.load_state_dict(checkpoint['state_dict'])
+# model.to(device)
 
-# Save model weights for loading into R package
-path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
-torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
+# # Save model weights for loading into R package
+# path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
+# torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
 
-# save model architecture for loading into R package
-model.eval()
-s = torch.jit.script(model.to(device='cpu'))
-torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")
+# # save model architecture for loading into R package
+# model.eval()
+# s = torch.jit.script(model.to(device='cpu'))
+# torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")

@@ -139,7 +139,6 @@ class EvalDataset(Dataset):
         img = img.astype(np.float32) / 255.
         # convert image to tensor
         img = ToTensor(img)
-
         return img
 
     def collate_fn(self, batch):

@@ -136,7 +136,7 @@ def spec_dict(df, max_per_class, min_per_class):
     """
 
     # list species with fewer images than category min
-    too_few = list({k for (k, v) in Counter(df['common.name']).items() if v < min_per_class})
+    too_few = list({k for (k, v) in Counter(df['species']).items() if v < min_per_class})
 
     # remove general bird images
     too_few.append('Bird')
