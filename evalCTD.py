@@ -64,6 +64,8 @@ IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS02'
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn 
                if os.path.splitext(f)[1].lower() == '.jpg']
 
+# TODO: add option here to load partial results and only run images that have not already been run through model
+
 # define image dimensions
 w = model_args['image width']
 h = model_args['image height']
@@ -167,6 +169,14 @@ with torch.no_grad():
         # })
         pred_df.append(pred_df_i)
         # target_df.append(tar_df_i)
+
+        # save results periodically 
+        # TODO troubleshoot this
+        # if [i %% 100 == 0]:
+            # concatenate preds into df
+            pred_df = pd.concat(pred_df).reset_index(drop=True)
+            # save to csv
+            pred_df.to_csv(IMAGE_PATH + "pred_df.csv")
 
 
 # concatenate preds and targets into dfs
