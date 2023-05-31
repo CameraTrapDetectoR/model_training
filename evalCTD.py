@@ -6,17 +6,15 @@ import os
 import torch
 from PIL import ImageFile
 import numpy as np
-import albumentations as A
-from models.model_inference import plot_losses
-from albumentations.pytorch.transforms import ToTensorV2
+import pandas as pd
+import cv2
+
+import json
 from utils.hyperparameters import get_anchors
 from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
-import pandas as pd
-from torchmetrics.detection.mean_ap import MeanAveragePrecision
-from torchvision.transforms import ToTensor
-import cv2
+
 
 
 #######
@@ -44,7 +42,7 @@ print(device)
 # allow truncated images to load
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-# set path to model run being evaluated
+# set path to model run being deployed
 output_path = "./output/fasterRCNN_resnet_20230221_1612/"
 
 # open model arguments file
@@ -54,17 +52,6 @@ model_args['image width'] = int(model_args['image width'])
 model_args['image height'] = int(model_args['image height'])
 model_args['anchor box sizes'] = tuple(eval(model_args['anchor box sizes']))
 cnn_backbone = model_args['backbone']
-
-# load image info
-#TODO: make this easily changeable
-
-# set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS02'
-# create holder for file names
-image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn 
-               if os.path.splitext(f)[1].lower() == '.jpg']
-
-# TODO: add option here to load partial results and only run images that have not already been run through model
 
 # define image dimensions
 w = model_args['image width']
@@ -90,14 +77,36 @@ model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
 model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
+# set image directory
+IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS12'
+# load image names
+image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if os.path.splitext(f)[1].lower() == '.jpg']
+
+
 #######
 ## -- Evaluate Model on Test Data
 #######
 
-# create placeholders for targets and predictions
+# create placeholder for predictions
 pred_df = []
 
-# deploy model on test images
+# TODO: add option here to load partial results and only run images that have not already been run through model
+resume_from_checkpoint = False
+if resume_from_checkpoint == True:
+    # search IMAGE_ROOT for checkpoint file
+    # throw error if cannot find file
+    # load file and set as pred_df
+    f = open(chkpt_pth)
+    pred_checkpoint = json.load(f) 
+    pred_df = pd.DataFrame.from_dict(pred_checkpoint)
+    # filter through image infos and update list to images not in pred_df
+
+
+else:
+    # define checkpoint path
+    chkpt_pth = IMAGE_PATH + "_pred_checkpoint.json"
+
+# deploy model
 with torch.no_grad():
     model.eval()
     for i in tqdm(range(len(image_infos))):
@@ -119,6 +128,8 @@ with torch.no_grad():
         image = image.to(device)
 
         # run input through the model
+        with torch.no_grad():
+            output = model(image)[0]
         output = model(image)[0]
 
         # extract prediction bboxes, labels, scores above score_thresh
@@ -134,8 +145,7 @@ with torch.no_grad():
         bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
 
         # perform non-maximum suppression on remaining predictions
-        # set iou threshold low since training data does not contain overlapping ground truth boxes
-        ixs = nms(bbs, confs, iou_threshold=0.1)
+        ixs = nms(bbs, confs, iou_threshold=0.5)
 
         bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
@@ -144,7 +154,6 @@ with torch.no_grad():
         confs = confs.tolist()
         labels = labels.tolist()
 
-        # save predictions and targets
         if len(bbs) == 0:
             pred_df_i = pd.DataFrame({
                 'filename': image_infos[i],
@@ -161,117 +170,29 @@ with torch.no_grad():
                 'confidence': confs,
                 'bbox': bbs
             })
-        # tar_df_i = pd.DataFrame({
-        #     'filename': image_infos[i],
-        #     'file_id': image_infos[i][:-4],
-        #     'class_name': dfi['LabelName'].tolist(),
-        #     'bbox': tbs.tolist()
-        # })
+
+        # add image predictions to existing list
         pred_df.append(pred_df_i)
-        # target_df.append(tar_df_i)
 
-        # save results periodically 
+        # save results every 100 images 
         # TODO troubleshoot this
-        # if [i %% 100 == 0]:
+         if i % 100 == 0:
             # concatenate preds into df
-            pred_df = pd.concat(pred_df).reset_index(drop=True)
-            # save to csv
-            pred_df.to_csv(IMAGE_PATH + "pred_df.csv")
-
+             pred_df = pd.concat(pred_df).reset_index(drop=True)
+            # save to json
+             pred_df.to_json(path_or_buf=chkpt_pth, orient='records')
 
 # concatenate preds and targets into dfs
 pred_df = pd.concat(pred_df).reset_index(drop=True)
-# target_df = pd.concat(target_df).reset_index(drop=True)
 
 # save prediction and target dfs to csv
-# target_df.to_csv(output_path + "target_df.csv")
-pred_df.to_csv(IMAGE_PATH + "pred_df.csv")
+pred_df.to_csv(IMAGE_PATH + "_pred_df.csv")
+
+# remove checkpoint file
+# os.remove(chkpt_pth)
+
 
 #######
-## -- Calculate Evaluation Metrics
+## -- Post Processing
 #######
 
-# # extract predicted bboxes, confidence scores, and labels
-# preds = []
-# targets = []
-
-# # create list of dictionaries for targets, preds for each image
-# for i in tqdm(range(len(image_infos))):
-#     # extract predictions and targets for an image
-#     p_df = pred_df[pred_df['filename'] == image_infos[i]]
-#     t_df = target_df[target_df['filename'] == image_infos[i]]
-
-#     # # format boxes based on input
-#     # if format == 'csv':
-#     #     # pred detections
-#     #     pred_boxes = [box.strip('[').strip(']').strip(',') for box in p_df['bbox']]
-#     #     pred_boxes = np.array([np.fromstring(box, sep=', ') for box in pred_boxes])
-#     #     # ground truth boxes
-#     #     target_boxes = [box.strip('[').strip(']').strip(', ') for box in t_df['bbox']]
-#     #     target_boxes = np.array([np.fromstring(box, sep=', ') for box in target_boxes])
-#     # if format == 'env':
-#     #     # pred detections
-#     #     pred_boxes = [box for box in p_df['bbox']]
-#     #     # ground truth boxes
-#     #     target_boxes = [box for box in t_df['bbox']]
-
-#     # pred boxes
-#     pred_boxes = [box for box in p_df['bbox']]
-#     # ground truth boxes
-#     target_boxes = [box for box in t_df['bbox']]
-
-#     # format scores and labels
-#     pred_scores = p_df['confidence'].values.tolist()
-#     pred_labels = p_df['class_name'].map(label2target)
-#     target_labels = t_df['class_name'].map(label2target)
-
-#     # convert preds to dictionary of tensors
-#     pred_i = {
-#         'boxes': torch.tensor(pred_boxes),
-#         'scores': torch.tensor(pred_scores),
-#         'labels': torch.tensor(pred_labels.values)
-#     }
-
-#     # convert targets to tensor dictionary
-#     target_i = {
-#         'boxes': torch.tensor(target_boxes),
-#         'labels': torch.tensor(target_labels.values)
-#     }
-
-#     # add current image preds and targets to dictionary list
-#     preds.append(pred_i)
-#     targets.append(target_i)
-
-# # initialize metric
-# metric = MeanAveragePrecision(box_format='xyxy', class_metrics=True)
-# metric.update(preds, targets)
-# results = metric.compute()
-
-# # convert results to dataframe
-# results_df = pd.DataFrame({k: np.array(v) for k, v in results.items()}).reset_index().rename(columns={"index": "target"})
-
-# # add F1 score to results
-# results_df['f1_score'] = 2 * ((results_df['map_per_class'] * results_df['mar_100_per_class']) /
-#                               (results_df['map_per_class'] + results_df['mar_100_per_class']))
-
-# # Add class names to results
-# results_df['class_name'] = results_df['target'].map(target2label)
-# results_df = results_df.drop(['target'], axis = 1)
-
-# # save results df to csv
-# results_df.to_csv(output_path + "results_df.csv")
-
-# # re-initiate the model on CPU so it can be loaded into R package
-# device = 'cpu'
-# model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
-# model.load_state_dict(checkpoint['state_dict'])
-# model.to(device)
-
-# # Save model weights for loading into R package
-# path2weights = output_path + cnn_backbone + "_" + str(num_classes) + "classes_weights_cpu.pth"
-# torch.save(dict(model.to(device='cpu').state_dict()), f=path2weights)
-
-# # save model architecture for loading into R package
-# model.eval()
-# s = torch.jit.script(model.to(device='cpu'))
-# torch.jit.save(s, output_path + cnn_backbone + "_" + str(num_classes) + "classes_Arch_cpu.pth")

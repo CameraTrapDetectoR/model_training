@@ -110,39 +110,3 @@ def get_class_weights(train_df, model_type):
 
     return sampler
 
-# Create PyTorch dataset for unlabeled images
-class EvalDataset(Dataset):
-    """
-    Builds dataset for images without labels.
-    DF must include: filename containing pathway to individual images;
-    Images are resized, channels converted, and converted to tensors.
-    """
-
-    def __init__(self, df, image_dir, w, h):
-        self.image_dir = image_dir
-        self.df = df
-        self.image_infos = df.filename.unique()
-        self.w = w
-        self.h = h
-
-    def __getitem__(self, item):
-        # create image id
-        image_id = self.image_infos[item]
-        # create full path to open each image file
-        img_path = os.path.join(self.image_dir, image_id).replace("\\", "/")
-        # open image
-        img = cv2.imread(img_path)
-        # reformat color channels
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # resize image so bboxes can also be converted
-        img = cv2.resize(img, (self.w, self.h), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32) / 255.
-        # convert image to tensor
-        img = ToTensor(img)
-        return img
-
-    def collate_fn(self, batch):
-        return tuple(zip(*batch))
-
-    def __len__(self):
-        return len(self.image_infos)
