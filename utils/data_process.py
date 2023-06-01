@@ -17,7 +17,7 @@ def class_range(model_type):
         max_per_class = 10000
         min_per_class = 300
     if model_type == 'general':
-        max_per_class = 30000
+        max_per_class = 150000
         min_per_class = 5000
     if model_type == 'pig_only':
         max_per_class = 10000
@@ -100,24 +100,78 @@ def format_vars(df):
     :param df: unformatted df
     :return: df with formatting
     """
-    # update column names for common name
-    df['common.name_org'] = df['common.name']
-    df['common.name'] = df['common.name.general']
+    # create copy of original species column
+    df['species_org'] = df['species']
+
+    # replace spaces with underscores in species column
+    df['species'] = df['species'].replace(' ', '_', regex=True)
 
     # combine squirrel species into one group
-    squirrels = ["Aberts_Squirrel", 'American_Red_Squirrel', 'Douglas_Squirrel', 'Eastern_Fox_Squirrel',
-                 'Eastern_Gray_Squirrel', 'Fox_Squirrel', 'Golden-Mantled_Ground_Squirrel', 'Gray_Squirrel',
-                 'Northern_Flying_Squirrel', 'Rock_Squirrel', 'Squirrel', 'Western_Gray_Squirrel']
-    df.loc[df['common.name'].isin(squirrels), 'common.name'] = 'squirrel_spp'
+    squirrels = ['Callospermophilus_lateralis', 'Glaucomys_sabrinus', 'Neosciurus_carolinensis',
+                 'Otospermophilus_variegatus', 'Sciurus_aberti', 'Sciurus_griseus', 
+                 'Sciurus_niger', 'Tamiasciurus_douglasii', 'Tamiasciurus-hudsonicus']
+    df.loc[df['species'].isin(squirrels), 'species'] = 'squirrel_spp'
 
     # combine pigeons into one group
-    pigeons = ['Band-Tailed_Pigeon', ' White-Crowned_Pigeon']
-    df.loc[df['common.name'].isin(pigeons), 'common.name'] = 'pigeon_spp'
+    # pigeons = ['Patagioenas_fasciata', 'Patagioenas_leucocephala']
+    df.loc[df['speecies'].str.contains('Patagioenas'), 'species'] = 'Patagioenas_spp'
 
     # combine doves into one group
-    doves = ['Common_Ground Dove', 'Dove', 'Eurasian_Collared_Dove', 'Rock_Dove',
-             'White-Tipped_Dove']
-    df.loc[df['common.name'].isin(doves), 'common.name'] = 'dove_spp'
+    doves = ['Columba_livia', 'Columbina_passerina', 'Leptotila verreauxi', 
+             'Streptopelia_decaocto', 'Zenaida', 'Zenaida_asiatica', 'Zenaida_macroura']
+    df.loc[df['species'].isin(doves), 'species'] = 'dove_spp'
+
+    # combine blackbirds
+    blackbirds = ['Agelaius_phoeniceus', 'Euphagus_cyanocephalus', 'Xanthocephalus_xanthocephalus']
+    df.loc[df['species'].isin(blackbirds), 'species'] = 'blackbird_spp'
+
+    # combine chipmunks
+    # chipmunks = ['Tamias_ruficaudus', 'Tamias_striatus']
+    df.loc[df['species'].str.contains('Tamias'), 'species'] = 'Tamias_spp'
+
+    # combine cottontail rabbits
+    # cottontails = ['Sylvilagus', 'Sylvilagus_audubonii', 'Sylvilagus_floridanus', 
+    #                'Sylvilagus_nuttallii']
+    df.loc[df['species'].str.contains('Sylvilagus'), 'species'] = 'Sylvilagus_spp'
+
+    # combine cowbirds
+    # cowbirds = ['Molothrus_aeneus', 'Molothrus_ater']
+    df.loc[df['species'].str.contains('Molothrus'), 'species'] = 'Molothrus_spp'
+
+    # combine egrets
+    egrets = ['Ardea_alba', 'Bubulcus_ibis']
+    df.loc[df['species'].isin(egrets), 'species'] = 'egret_spp'
+
+    # combine grackles
+    df.loc[df['species'].str.contains('Quiscalus'), 'species'] = 'Quiscalus_spp'
+
+    # combine jackrabbits
+    jackrabbits = ['Lepus_californicus', 'Lepus_townsendii']
+    #TODO confirm naming
+    df.loc[df['species'].isin(jackrabbits), 'species'] = 'jackrabbit_spp'
+
+    # combine herons
+    herons = ['Ardea_herodias', 'Butorides_virescens', 'Egretta_tricolor']
+    df.loc[df['species'].isin(herons), 'species'] = 'heron_spp'
+    night_herons = ['Nyctanassa_violacea', 'Nycticorax_nycticorax']
+    df.loc[df['species'].isin(night_herons), 'species'] = 'night_heron_spp'
+
+    # combine owls
+    owls = ['Asio_flammeus', 'Athene_cunicularia', 'Bubo_virginianus', 'Strix_varia', 
+            'Tyto_alba']
+    df.loc[df['species'].isin(owls), 'species'] = 'owl_spp'
+
+    # combine prairie dogs
+    df.loc[df['species'].str.contains('Cynomys'), 'species'] = 'Cynomys_spp'
+
+    # combine quails
+    quails = ['Callipepla_californica', 'Colinus_virginianus', 'Oreortyx_pictus']
+    df.loc[df['species'].isin(quails), 'species'] = 'quail_spp'
+
+    # combine red foxes
+    df.loc[df['species'].str.contains('Vulpes_vulpes'), 'species'] = 'Vulpes_vulpes'
+
+
 
     # change the taxonomic classifications for vehicle
     df.loc[df['common.name'] == 'Vehicle', ['genus', 'species', 'family', 'order', 'class']] = 'vehicle'

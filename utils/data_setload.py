@@ -10,6 +10,8 @@ import cv2
 import pandas as pd
 from collections import Counter
 
+from torchvision.transforms import ToTensor
+
 # Create PyTorch dataset
 class DetectDataset(Dataset):
     """
@@ -107,3 +109,4 @@ def get_class_weights(train_df, model_type):
     sampler = WeightedRandomSampler(sample_weights, num_samples=len(train_unique), replacement=True)
 
     return sampler
+
