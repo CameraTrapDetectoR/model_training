@@ -176,6 +176,10 @@ else:
         df, label2target, columns2stratify = dicts.spec_dict(df, max_per_class, min_per_class)
     if model_type == 'pig_only':
         df, label2target, columns2stratify = dicts.pig_dict(df, max_per_class, min_per_class)
+    if model_type == 'general':
+        df, label2target, columns2stratify = dicts.gen_dict(df, max_per_class, min_per_class)
+    if model_type == 'family':
+        df, label2target, columns2stratify = dicts.fam_dict(df, max_per_class, min_per_class)
 
     # reverse dictionary to read into pytorch
     target2label = {t: l for l, t in label2target.items()}
