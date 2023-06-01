@@ -17,7 +17,7 @@ def class_range(model_type):
         max_per_class = 10000
         min_per_class = 300
     if model_type == 'general':
-        max_per_class = 30000
+        max_per_class = 120000
         min_per_class = 5000
     if model_type == 'pig_only':
         max_per_class = 10000

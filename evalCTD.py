@@ -100,8 +100,6 @@ if resume_from_checkpoint == True:
     pred_checkpoint = json.load(f) 
     pred_df = pd.DataFrame.from_dict(pred_checkpoint)
     # filter through image infos and update list to images not in pred_df
-
-
 else:
     # define checkpoint path
     chkpt_pth = IMAGE_PATH + "_pred_checkpoint.json"
@@ -176,11 +174,11 @@ with torch.no_grad():
 
         # save results every 100 images 
         # TODO troubleshoot this
-         if i % 100 == 0:
-            # concatenate preds into df
-             pred_df = pd.concat(pred_df).reset_index(drop=True)
-            # save to json
-             pred_df.to_json(path_or_buf=chkpt_pth, orient='records')
+        # if i % 100 == 0:
+        #     # concatenate preds into df
+        #     pred_df = pd.concat(pred_df).reset_index(drop=True)
+        #     # save to json
+        #     pred_df.to_json(path_or_buf=chkpt_pth, orient='records')
 
 # concatenate preds and targets into dfs
 pred_df = pd.concat(pred_df).reset_index(drop=True)
@@ -189,7 +187,7 @@ pred_df = pd.concat(pred_df).reset_index(drop=True)
 pred_df.to_csv(IMAGE_PATH + "_pred_df.csv")
 
 # remove checkpoint file
-# os.remove(chkpt_pth)
+os.remove(chkpt_pth)
 
 
 #######
