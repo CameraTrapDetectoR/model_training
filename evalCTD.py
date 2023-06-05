@@ -78,7 +78,7 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS12'
+IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS01'
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if os.path.splitext(f)[1].lower() == '.jpg']
 
@@ -187,7 +187,7 @@ pred_df = pd.concat(pred_df).reset_index(drop=True)
 pred_df.to_csv(IMAGE_PATH + "_pred_df.csv")
 
 # remove checkpoint file
-os.remove(chkpt_pth)
+# os.remove(chkpt_pth)
 
 
 #######

@@ -114,7 +114,7 @@ def format_vars(df):
 
     # combine pigeons into one group
     # pigeons = ['Patagioenas_fasciata', 'Patagioenas_leucocephala']
-    df.loc[df['speecies'].str.contains('Patagioenas'), 'species'] = 'Patagioenas_spp'
+    df.loc[df['species'].str.contains('Patagioenas', na=False), 'species'] = 'Patagioenas_spp'
 
     # combine doves into one group
     doves = ['Columba_livia', 'Columbina_passerina', 'Leptotila verreauxi', 
@@ -127,23 +127,23 @@ def format_vars(df):
 
     # combine chipmunks
     # chipmunks = ['Tamias_ruficaudus', 'Tamias_striatus']
-    df.loc[df['species'].str.contains('Tamias'), 'species'] = 'Tamias_spp'
+    df.loc[df['species'].str.contains('Tamias', na=False), 'species'] = 'Tamias_spp'
 
     # combine cottontail rabbits
     # cottontails = ['Sylvilagus', 'Sylvilagus_audubonii', 'Sylvilagus_floridanus', 
     #                'Sylvilagus_nuttallii']
-    df.loc[df['species'].str.contains('Sylvilagus'), 'species'] = 'Sylvilagus_spp'
+    df.loc[df['species'].str.contains('Sylvilagus', na=False), 'species'] = 'Sylvilagus_spp'
 
     # combine cowbirds
     # cowbirds = ['Molothrus_aeneus', 'Molothrus_ater']
-    df.loc[df['species'].str.contains('Molothrus'), 'species'] = 'Molothrus_spp'
+    df.loc[df['species'].str.contains('Molothrus', na=False), 'species'] = 'Molothrus_spp'
 
     # combine egrets
     egrets = ['Ardea_alba', 'Bubulcus_ibis']
     df.loc[df['species'].isin(egrets), 'species'] = 'egret_spp'
 
     # combine grackles
-    df.loc[df['species'].str.contains('Quiscalus'), 'species'] = 'Quiscalus_spp'
+    df.loc[df['species'].str.contains('Quiscalus', na=False), 'species'] = 'Quiscalus_spp'
 
     # combine jackrabbits
     jackrabbits = ['Lepus_californicus', 'Lepus_townsendii']
@@ -162,16 +162,14 @@ def format_vars(df):
     df.loc[df['species'].isin(owls), 'species'] = 'owl_spp'
 
     # combine prairie dogs
-    df.loc[df['species'].str.contains('Cynomys'), 'species'] = 'Cynomys_spp'
+    df.loc[df['species'].str.contains('Cynomys', na=False), 'species'] = 'Cynomys_spp'
 
     # combine quails
     quails = ['Callipepla_californica', 'Colinus_virginianus', 'Oreortyx_pictus']
     df.loc[df['species'].isin(quails), 'species'] = 'quail_spp'
 
     # combine red foxes
-    df.loc[df['species'].str.contains('Vulpes_vulpes'), 'species'] = 'Vulpes_vulpes'
-
-
+    df.loc[df['species'].str.contains('Vulpes_vulpes', na=False), 'species'] = 'Vulpes_vulpes'
 
     # change the taxonomic classifications for vehicle
     df.loc[df['common.name'] == 'Vehicle', ['genus', 'species', 'family', 'order', 'class']] = 'vehicle'
