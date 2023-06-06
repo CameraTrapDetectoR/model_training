@@ -8,7 +8,7 @@ def gen_dict(df, max_per_class):
     """
     dictionary for the general model
     :param df:
-    :param max_per_class: catgory max
+    :param max_per_class: category max
     :return: sample df, dictionary, column to use for train/val split
     """
 
@@ -26,7 +26,7 @@ def gen_dict(df, max_per_class):
 
     # take sample of mammals and birds
     animals = df.loc[df['general_category'].isin(['mammal', 'bird'])]
-    animal_sample = animals.groupby('general_category').sample(n=max_per_class, replace=False)
+    animal_sample = animals.groupby(['general_category', 'species']).sample(n=max_per_class, replace=False)
 
     # add back all vehicle images
     df = pd.concat([animal_sample, df[df['general_category'] == 'vehicle'], df[df['general_category'] == 'human']])
@@ -35,7 +35,7 @@ def gen_dict(df, max_per_class):
     df = original_df.loc[original_df['filename'].isin(df['filename'])]
 
     # rename label column
-    df['LabelName'] = df['general_category']
+    df = df.assign(LabelName=df.general_category)
 
     # split across category and species for train-val split
     columns2stratify = ['general_category']
@@ -116,7 +116,7 @@ def fam_dict(df, max_per_class, min_per_class):
     pd.options.mode.chained_assignment = None
 
     # standardize label name
-    df['LabelName'] = df['family']
+    df = df.assign(LabelName=df.family)
 
     # stratify across species and family for train/val split
     columns2stratify = ['family']
@@ -200,7 +200,7 @@ def spec_dict(df, max_per_class, min_per_class):
     pd.options.mode.chained_assignment = None
 
     # standardize label name
-    df['LabelName'] = df['common.name']
+    df = df.assign(LabelName=df.species)
     # stratify across species for train/val split
     columns2stratify = ['common.name']
 
