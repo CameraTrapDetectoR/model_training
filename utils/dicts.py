@@ -4,10 +4,11 @@ import pandas as pd
 import numpy as np
 from collections import Counter
 
-def gen_dict(df):
+def gen_dict(df, max_per_class):
     """
     dictionary for the general model
     :param df:
+    :param max_per_class: catgory max
     :return: sample df, dictionary, column to use for train/val split
     """
 
