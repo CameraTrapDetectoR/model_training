@@ -23,15 +23,12 @@ def gen_dict(df):
     # add background class
     label2target['empty'] = 0
 
-    # remove vehicle and human class before downsampling
-    g = df[df['general_category'] == 'vehicle'].groupby('general_category', group_keys=False)
-    g = g.concat(df[df['general_category'] == 'human']).groupby('general_category', group_keys=False)
-
-    # downsample to smallest remaining category
-    balanced_df = pd.DataFrame(g.apply(lambda x: x.sample(g.size().min()))).reset_index(drop=True)
+    # take sample of mammals and birds
+    animals = df.loc[df['general_category'].isin(['mammal', 'bird'])]
+    animal_sample = animals.groupby('general_category').sample(n=max_per_class, replace=False)
 
     # add back all vehicle images
-    df = pd.concat([balanced_df, df[df['general_category'] == 'vehicle'], df[df['general_category'] == 'human']])
+    df = pd.concat([animal_sample, df[df['general_category'] == 'vehicle'], df[df['general_category'] == 'human']])
 
     # locate images within df
     df = original_df.loc[original_df['filename'].isin(df['filename'])]
@@ -40,7 +37,7 @@ def gen_dict(df):
     df['LabelName'] = df['general_category']
 
     # split across category and species for train-val split
-    columns2stratify = ['general_category' + '_' + 'common.name']
+    columns2stratify = ['general_category']
 
     return df, label2target, columns2stratify
 
@@ -121,7 +118,7 @@ def fam_dict(df, max_per_class, min_per_class):
     df['LabelName'] = df['family']
 
     # stratify across species and family for train/val split
-    columns2stratify = ['family' + '_' + 'common.name']
+    columns2stratify = ['family']
 
     return df, label2target, columns2stratify
 
