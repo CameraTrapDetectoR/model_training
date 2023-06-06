@@ -177,7 +177,7 @@ else:
     if model_type == 'pig_only':
         df, label2target, columns2stratify = dicts.pig_dict(df, max_per_class, min_per_class)
     if model_type == 'general':
-        df, label2target, columns2stratify = dicts.gen_dict(df, max_per_class, min_per_class)
+        df, label2target, columns2stratify = dicts.gen_dict(df, max_per_class)
     if model_type == 'family':
         df, label2target, columns2stratify = dicts.fam_dict(df, max_per_class, min_per_class)
 
