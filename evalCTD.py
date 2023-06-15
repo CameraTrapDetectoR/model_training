@@ -9,13 +9,10 @@ import numpy as np
 import pandas as pd
 import cv2
 
-import json
 from utils.hyperparameters import get_anchors
 from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
-
-
 
 #######
 ## -- Prepare System and Data for Model Training
@@ -78,10 +75,12 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Control/NFS13'
+IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS24-2'
 # load image names
-image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if os.path.splitext(f)[1].lower() == '.jpg']
-
+image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
+               os.path.splitext(f)[1].lower() == '.jpg']
+# define checkpoint path
+chkpt_pth = IMAGE_PATH + "_pred_checkpoint.csv"
 
 #######
 ## -- Evaluate Model on Test Data
@@ -90,21 +89,22 @@ image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.wal
 # create placeholder for predictions
 pred_df = []
 
-# TODO: add option here to load partial results and only run images that have not already been run through model
 resume_from_checkpoint = False
 if resume_from_checkpoint == True:
-    # search IMAGE_ROOT for checkpoint file
-    # throw error if cannot find file
-    # load file and set as pred_df
-    f = open(chkpt_pth)
-    pred_checkpoint = json.load(f) 
-    pred_df = pd.DataFrame.from_dict(pred_checkpoint)
+    # load checkpoint file
+    chkpt_pth = IMAGE_PATH + "_pred_checkpoint.csv"
+    pred_checkpoint = pd.read_csv(chkpt_pth)
+
+    # turn pred_checkpoint into list of dataframes and add to pred_df
+    for row in pred_checkpoint.itertuples(index=False):
+        pred_df.append(pd.Series(row).to_frame())
+
     # filter through image infos and update list to images not in pred_df
-else:
-    # define checkpoint path
-    chkpt_pth = IMAGE_PATH + "_pred_checkpoint.json"
+    also_rans = pred_checkpoint['filename'].tolist()
+    image_infos = [x for x in image_infos if x not in also_rans]
 
 # deploy model
+count = 0
 with torch.no_grad():
     model.eval()
     for i in tqdm(range(len(image_infos))):
@@ -117,7 +117,7 @@ with torch.no_grad():
         # resize image so bboxes can also be converted
         img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
         img = img.astype(np.float32) / 255.
-        # convert array to tensor 
+        # convert array to tensor
         img = torch.from_numpy(img)
         # shift channels to be compatible with model input
         image = img.permute(2, 0, 1)
@@ -172,25 +172,23 @@ with torch.no_grad():
         # add image predictions to existing list
         pred_df.append(pred_df_i)
 
-        # save results every 100 images 
-        # TODO troubleshoot this
-        # if i % 100 == 0:
-        #     # concatenate preds into df
-        #     pred_df = pd.concat(pred_df).reset_index(drop=True)
-        #     # save to json
-        #     pred_df.to_json(path_or_buf=chkpt_pth, orient='records')
+        # save results every 10 images
+        count += 1
+        if count % 10 == 0:
+            # concatenate preds into df
+            pred_chkpt = pd.concat(pred_df).reset_index(drop=True)
+            # save to checkpoint
+            pred_chkpt.to_csv(chkpt_pth, index=False)
 
 # concatenate preds and targets into dfs
 pred_df = pd.concat(pred_df).reset_index(drop=True)
 
 # save prediction and target dfs to csv
-pred_df.to_csv(IMAGE_PATH + "_pred_df.csv")
+pred_df.to_csv(IMAGE_PATH + "_pred_df.csv", index=False)
 
 # remove checkpoint file
-# os.remove(chkpt_pth)
-
+os.remove(chkpt_pth)
 
 #######
 ## -- Post Processing
 #######
-
