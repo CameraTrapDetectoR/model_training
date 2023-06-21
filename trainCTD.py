@@ -55,7 +55,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
 # determine if resuming training from existing checkpoint
-resume = False
+resume = True
 
 # model setup if resuming training
 if resume:
@@ -129,7 +129,7 @@ if resume:
         batch_size = batch_size_org // grad_accumulation
 
     # set up class weights
-    sampler = get_class_weights(train_df)
+    sampler = get_class_weights(train_df, model_type)
 
     # define dataloaders
     train_loader = DataLoader(train_ds, batch_size=batch_size, collate_fn=train_ds.collate_fn,
