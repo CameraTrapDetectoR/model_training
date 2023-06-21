@@ -75,29 +75,27 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS24-2'
+IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS26-2'
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
 # define checkpoint path
-chkpt_pth = IMAGE_PATH + "_pred_checkpoint.csv"
+chkpt_pth = IMAGE_PATH + '_pred_checkpoint.csv'
 
 #######
 ## -- Evaluate Model on Test Data
 #######
 
 # create placeholder for predictions
-pred_df = []
+pred_df = pd.DataFrame(columns=['filename', 'file_id', 'class_name', 'confidence', 'bbox'])
 
 resume_from_checkpoint = False
 if resume_from_checkpoint == True:
     # load checkpoint file
-    chkpt_pth = IMAGE_PATH + "_pred_checkpoint.csv"
     pred_checkpoint = pd.read_csv(chkpt_pth)
 
     # turn pred_checkpoint into list of dataframes and add to pred_df
-    for row in pred_checkpoint.itertuples(index=False):
-        pred_df.append(pd.Series(row).to_frame())
+    pred_df = pd.concat([pred_df, pred_checkpoint], ignore_index=True)
 
     # filter through image infos and update list to images not in pred_df
     also_rans = pred_checkpoint['filename'].tolist()
@@ -169,22 +167,17 @@ with torch.no_grad():
                 'bbox': bbs
             })
 
-        # add image predictions to existing list
-        pred_df.append(pred_df_i)
+        # add image predictions to existing df
+        pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
 
         # save results every 10 images
         count += 1
         if count % 10 == 0:
-            # concatenate preds into df
-            pred_chkpt = pd.concat(pred_df).reset_index(drop=True)
             # save to checkpoint
-            pred_chkpt.to_csv(chkpt_pth, index=False)
-
-# concatenate preds and targets into dfs
-pred_df = pd.concat(pred_df).reset_index(drop=True)
+            pred_df.to_csv(chkpt_pth, index=False)
 
 # save prediction and target dfs to csv
-pred_df.to_csv(IMAGE_PATH + "_pred_df.csv", index=False)
+pred_df.to_csv(IMAGE_PATH + '_pred_df.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
