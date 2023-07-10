@@ -14,6 +14,8 @@ from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
 
+from collections import Counter
+
 #######
 ## -- Prepare System and Data for Model Training
 #######
@@ -75,7 +77,7 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS26-2'
+IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS34-2'
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
@@ -89,7 +91,7 @@ chkpt_pth = IMAGE_PATH + '_pred_checkpoint.csv'
 # create placeholder for predictions
 pred_df = pd.DataFrame(columns=['filename', 'file_id', 'class_name', 'confidence', 'bbox'])
 
-resume_from_checkpoint = False
+resume_from_checkpoint = True
 if resume_from_checkpoint == True:
     # load checkpoint file
     pred_checkpoint = pd.read_csv(chkpt_pth)
@@ -185,3 +187,35 @@ os.remove(chkpt_pth)
 #######
 ## -- Post Processing
 #######
+
+## update pred_df to mimic results from R package, with additional columns for manual validation
+
+# Rename and remove columns
+pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
+
+# extract image name/structure from file_path
+image_names = pred_df['file_path']
+image_names = image_names.str.replace('/90daydata/cameratrapdetector//', '')
+pred_df['image_name'] = image_names
+
+# get prediction counts for each image
+cts = Counter(pred_df['image_name']).items()
+pred_counts = pd.DataFrame.from_dict(cts)
+pred_counts.columns = ['image_name', 'count']
+pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
+
+# separate images with one prediction and images with >1 predictions
+single_preds = pred_df[pred_df['count'] == 1]
+multi_preds = pred_df[pred_df['count'] > 1]
+
+# format single preds
+single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
+
+# format multiple preds
+multi_preds.groupby(['image_name', 'prediction']).sum() #TODO troubleshoot this
+
+# TODO: join formatted multi, single preds
+# TODO: remove bbox column
+# TODO: add columns for manual review: true_class, true_count, comments
+# TODO: save with new formatted name
+
