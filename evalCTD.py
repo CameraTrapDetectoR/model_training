@@ -77,7 +77,7 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS34-2'
+IMAGE_PATH = IMAGE_ROOT + '/PatClark/oregon/'
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
@@ -108,66 +108,76 @@ count = 0
 with torch.no_grad():
     model.eval()
     for i in tqdm(range(len(image_infos))):
-        # set image path
-        img_path = image_infos[i]
-        # open image
-        img = cv2.imread(img_path)
-        # reformat color channels
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # resize image so bboxes can also be converted
-        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32) / 255.
-        # convert array to tensor
-        img = torch.from_numpy(img)
-        # shift channels to be compatible with model input
-        image = img.permute(2, 0, 1)
-        image = image.unsqueeze_(0)
-        # send input to CUDA if available
-        image = image.to(device)
+        try:
+            # set image path
+            img_path = image_infos[i]
+            # open image
+            img = cv2.imread(img_path)
+            # reformat color channels
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            # resize image so bboxes can also be converted
+            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+            img = img.astype(np.float32) / 255.
+            # convert array to tensor
+            img = torch.from_numpy(img)
+            # shift channels to be compatible with model input
+            image = img.permute(2, 0, 1)
+            image = image.unsqueeze_(0)
+            # send input to CUDA if available
+            image = image.to(device)
 
-        # run input through the model
-        with torch.no_grad():
+            # run input through the model
+            with torch.no_grad():
+                output = model(image)[0]
             output = model(image)[0]
-        output = model(image)[0]
 
-        # extract prediction bboxes, labels, scores above score_thresh
-        # format prediction data
-        bbs = output['boxes'].cpu().detach()
-        labels = output['labels'].cpu().detach()
-        confs = output['scores'].cpu().detach()
+            # extract prediction bboxes, labels, scores above score_thresh
+            # format prediction data
+            bbs = output['boxes'].cpu().detach()
+            labels = output['labels'].cpu().detach()
+            confs = output['scores'].cpu().detach()
 
-        # id indicies of tensors to include in evaluation
-        idx = torch.where(confs > 0.01)
+            # id indicies of tensors to include in evaluation
+            idx = torch.where(confs > 0.01)
 
-        # filter to predictions that meet the threshold
-        bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+            # filter to predictions that meet the threshold
+            bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
 
-        # perform non-maximum suppression on remaining predictions
-        ixs = nms(bbs, confs, iou_threshold=0.5)
+            # perform non-maximum suppression on remaining predictions
+            ixs = nms(bbs, confs, iou_threshold=0.5)
 
-        bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
+            bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
-        # format predictions
-        bbs = bbs.tolist()
-        confs = confs.tolist()
-        labels = labels.tolist()
+            # format predictions
+            bbs = bbs.tolist()
+            confs = confs.tolist()
+            labels = labels.tolist()
 
-        if len(bbs) == 0:
+            if len(bbs) == 0:
+                pred_df_i = pd.DataFrame({
+                    'filename': image_infos[i],
+                    'file_id': image_infos[i][:-4],
+                    'class_name': 'empty',
+                    'confidence': 1,
+                    'bbox': [[0, 0, w, h]]
+                })
+            else:
+                pred_df_i = pd.DataFrame({
+                    'filename': image_infos[i],
+                    'file_id': image_infos[i][:-4],
+                    'class_name': [target2label[a] for a in labels],
+                    'confidence': confs,
+                    'bbox': bbs
+                })
+        except Exception as err:
             pred_df_i = pd.DataFrame({
                 'filename': image_infos[i],
                 'file_id': image_infos[i][:-4],
-                'class_name': 'empty',
-                'confidence': 1,
-                'bbox': [(0, 0, w, h)]
+                'class_name': "Image error",
+                'confidence': 0,
+                'bbox': [[0, 0, 0, 0]]
             })
-        else:
-            pred_df_i = pd.DataFrame({
-                'filename': image_infos[i],
-                'file_id': image_infos[i][:-4],
-                'class_name': [target2label[a] for a in labels],
-                'confidence': confs,
-                'bbox': bbs
-            })
+            pass
 
         # add image predictions to existing df
         pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
