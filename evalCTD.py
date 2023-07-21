@@ -14,6 +14,8 @@ from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
 
+from collections import Counter
+
 #######
 ## -- Prepare System and Data for Model Training
 #######
@@ -75,29 +77,27 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/Yancy/Treatment/NFS24-2'
+IMAGE_PATH = IMAGE_ROOT + '/PatClark/oregon/'
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
 # define checkpoint path
-chkpt_pth = IMAGE_PATH + "_pred_checkpoint.csv"
+chkpt_pth = IMAGE_PATH + '_pred_checkpoint.csv'
 
 #######
 ## -- Evaluate Model on Test Data
 #######
 
 # create placeholder for predictions
-pred_df = []
+pred_df = pd.DataFrame(columns=['filename', 'file_id', 'class_name', 'confidence', 'bbox'])
 
-resume_from_checkpoint = False
+resume_from_checkpoint = True
 if resume_from_checkpoint == True:
     # load checkpoint file
-    chkpt_pth = IMAGE_PATH + "_pred_checkpoint.csv"
     pred_checkpoint = pd.read_csv(chkpt_pth)
 
     # turn pred_checkpoint into list of dataframes and add to pred_df
-    for row in pred_checkpoint.itertuples(index=False):
-        pred_df.append(pd.Series(row).to_frame())
+    pred_df = pd.concat([pred_df, pred_checkpoint], ignore_index=True)
 
     # filter through image infos and update list to images not in pred_df
     also_rans = pred_checkpoint['filename'].tolist()
@@ -108,83 +108,88 @@ count = 0
 with torch.no_grad():
     model.eval()
     for i in tqdm(range(len(image_infos))):
-        # set image path
-        img_path = image_infos[i]
-        # open image
-        img = cv2.imread(img_path)
-        # reformat color channels
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        # resize image so bboxes can also be converted
-        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32) / 255.
-        # convert array to tensor
-        img = torch.from_numpy(img)
-        # shift channels to be compatible with model input
-        image = img.permute(2, 0, 1)
-        image = image.unsqueeze_(0)
-        # send input to CUDA if available
-        image = image.to(device)
+        try:
+            # set image path
+            img_path = image_infos[i]
+            # open image
+            img = cv2.imread(img_path)
+            # reformat color channels
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            # resize image so bboxes can also be converted
+            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+            img = img.astype(np.float32) / 255.
+            # convert array to tensor
+            img = torch.from_numpy(img)
+            # shift channels to be compatible with model input
+            image = img.permute(2, 0, 1)
+            image = image.unsqueeze_(0)
+            # send input to CUDA if available
+            image = image.to(device)
 
-        # run input through the model
-        with torch.no_grad():
+            # run input through the model
+            with torch.no_grad():
+                output = model(image)[0]
             output = model(image)[0]
-        output = model(image)[0]
 
-        # extract prediction bboxes, labels, scores above score_thresh
-        # format prediction data
-        bbs = output['boxes'].cpu().detach()
-        labels = output['labels'].cpu().detach()
-        confs = output['scores'].cpu().detach()
+            # extract prediction bboxes, labels, scores above score_thresh
+            # format prediction data
+            bbs = output['boxes'].cpu().detach()
+            labels = output['labels'].cpu().detach()
+            confs = output['scores'].cpu().detach()
 
-        # id indicies of tensors to include in evaluation
-        idx = torch.where(confs > 0.01)
+            # id indicies of tensors to include in evaluation
+            idx = torch.where(confs > 0.01)
 
-        # filter to predictions that meet the threshold
-        bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+            # filter to predictions that meet the threshold
+            bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
 
-        # perform non-maximum suppression on remaining predictions
-        ixs = nms(bbs, confs, iou_threshold=0.5)
+            # perform non-maximum suppression on remaining predictions
+            ixs = nms(bbs, confs, iou_threshold=0.5)
 
-        bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
+            bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
-        # format predictions
-        bbs = bbs.tolist()
-        confs = confs.tolist()
-        labels = labels.tolist()
+            # format predictions
+            bbs = bbs.tolist()
+            confs = confs.tolist()
+            labels = labels.tolist()
 
-        if len(bbs) == 0:
+            if len(bbs) == 0:
+                pred_df_i = pd.DataFrame({
+                    'filename': image_infos[i],
+                    'file_id': image_infos[i][:-4],
+                    'class_name': 'empty',
+                    'confidence': 1,
+                    'bbox': [[0, 0, w, h]]
+                })
+            else:
+                pred_df_i = pd.DataFrame({
+                    'filename': image_infos[i],
+                    'file_id': image_infos[i][:-4],
+                    'class_name': [target2label[a] for a in labels],
+                    'confidence': confs,
+                    'bbox': bbs
+                })
+        except Exception as err:
             pred_df_i = pd.DataFrame({
                 'filename': image_infos[i],
                 'file_id': image_infos[i][:-4],
-                'class_name': 'empty',
-                'confidence': 1,
-                'bbox': [(0, 0, w, h)]
+                'class_name': "Image error",
+                'confidence': 0,
+                'bbox': [[0, 0, 0, 0]]
             })
-        else:
-            pred_df_i = pd.DataFrame({
-                'filename': image_infos[i],
-                'file_id': image_infos[i][:-4],
-                'class_name': [target2label[a] for a in labels],
-                'confidence': confs,
-                'bbox': bbs
-            })
+            pass
 
-        # add image predictions to existing list
-        pred_df.append(pred_df_i)
+        # add image predictions to existing df
+        pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
 
         # save results every 10 images
         count += 1
         if count % 10 == 0:
-            # concatenate preds into df
-            pred_chkpt = pd.concat(pred_df).reset_index(drop=True)
             # save to checkpoint
-            pred_chkpt.to_csv(chkpt_pth, index=False)
-
-# concatenate preds and targets into dfs
-pred_df = pd.concat(pred_df).reset_index(drop=True)
+            pred_df.to_csv(chkpt_pth, index=False)
 
 # save prediction and target dfs to csv
-pred_df.to_csv(IMAGE_PATH + "_pred_df.csv", index=False)
+pred_df.to_csv(IMAGE_PATH + '_pred_df.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
@@ -192,3 +197,35 @@ os.remove(chkpt_pth)
 #######
 ## -- Post Processing
 #######
+
+## update pred_df to mimic results from R package, with additional columns for manual validation
+
+# Rename and remove columns
+pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
+
+# extract image name/structure from file_path
+image_names = pred_df['file_path']
+image_names = image_names.str.replace('/90daydata/cameratrapdetector//', '')
+pred_df['image_name'] = image_names
+
+# get prediction counts for each image
+cts = Counter(pred_df['image_name']).items()
+pred_counts = pd.DataFrame.from_dict(cts)
+pred_counts.columns = ['image_name', 'count']
+pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
+
+# separate images with one prediction and images with >1 predictions
+single_preds = pred_df[pred_df['count'] == 1]
+multi_preds = pred_df[pred_df['count'] > 1]
+
+# format single preds
+single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
+
+# format multiple preds
+multi_preds.groupby(['image_name', 'prediction']).sum() #TODO troubleshoot this
+
+# TODO: join formatted multi, single preds
+# TODO: remove bbox column
+# TODO: add columns for manual review: true_class, true_count, comments
+# TODO: save with new formatted name
+
