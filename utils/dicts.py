@@ -229,6 +229,9 @@ def pig_dict(df, oversample_factor=1):
     too_few = list({k for (k, v) in Counter(not_pig_df['family']).items() if v < 300})
     not_pig_df = not_pig_df[~not_pig_df['family'].isin(too_few)]
 
+    # remove images with nan values
+    not_pig_df = not_pig_df.dropna(subset=['family'])
+
     # divide class size by number of non-pig families
     num_non_pig_fams = len(not_pig_df.family.unique())
     classwise_sample_n = round((pig_class_size * oversample_factor) / num_non_pig_fams)
