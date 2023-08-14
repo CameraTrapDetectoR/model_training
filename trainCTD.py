@@ -6,7 +6,7 @@ Script  to train updated CameraTrapDetectoR model
 import os
 import torch
 from utils.data_process import class_range, existing_images, \
-    orient_boxes, format_vars, split_df
+    orient_boxes, filter_partials, format_vars, split_df
 from utils import dicts
 import pandas as pd
 
@@ -55,7 +55,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
 # determine if resuming training from existing checkpoint
-resume = True
+resume = False
 
 # model setup if resuming training
 if resume:
@@ -155,7 +155,7 @@ if resume:
 # model setup for new training
 else:
     # Set model type: options = 'general', 'family', 'species', 'pig_only'
-    model_type = 'general'
+    model_type = 'pig_only'
 
     max_per_class, min_per_class = class_range(model_type)
 
@@ -168,6 +168,9 @@ else:
     # confirm all bbox coordinates correspond to UL, LR corners
     df = orient_boxes(df)
 
+    # filter out bboxes that touch image edges as patch for partials
+    df = filter_partials(df)
+
     # format df
     df = format_vars(df)
 
@@ -175,7 +178,7 @@ else:
     if model_type == 'species':
         df, label2target, columns2stratify = dicts.spec_dict(df, max_per_class, min_per_class)
     if model_type == 'pig_only':
-        df, label2target, columns2stratify = dicts.pig_dict(df, max_per_class, min_per_class)
+        df, label2target, columns2stratify = dicts.pig_dict(df, oversample_factor=2)
     if model_type == 'general':
         df, label2target, columns2stratify = dicts.gen_dict(df, max_per_class)
     if model_type == 'family':
@@ -188,7 +191,7 @@ else:
     num_classes = max(label2target.values()) + 1
 
     # split df into train/val/test sets
-    train_df, val_df, test_df = split_df(df, columns2stratify)
+    train_df, val_df, test_df = split_df(df, columns2stratify, model_type)
 
     # set image dimensions for training
     # TODO: determine ideal training w and h
@@ -439,7 +442,7 @@ for epoch in range(epoch, num_epochs):
         confs = output['scores'].cpu().detach()
 
         # id indicies of tensors to include in evaluation
-        idx = torch.where(confs > 0.1)
+        idx = torch.where(confs > 0.01)
 
         # filter to predictions that meet the threshold
         bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
@@ -478,13 +481,10 @@ for epoch in range(epoch, num_epochs):
             'class_name': dfi['LabelName'].tolist(),
             'bbox': tbs.tolist()
         })
-        pred_df.append(pred_df_i)
-        target_df.append(tar_df_i)
+        pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
+        target_df = pd.concat([target_df, tar_df_i], ignore_index=True)
 
-    # concatenate preds and targets into dfs
-    pred_df = pd.concat(pred_df).reset_index(drop=True)
-    target_df = pd.concat(target_df).reset_index(drop=True)
-
+    # calculate eval metrics
     preds, targets = prepare_results(pred_df=pred_df, target_df=target_df,
                     image_infos=test_infos, label2target=label2target)
 
