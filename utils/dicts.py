@@ -206,82 +206,79 @@ def spec_dict(df, max_per_class, min_per_class):
 
     return df, label2target, columns2stratify
 
-def pig_dict(df, max_per_class, min_per_class):
+def pig_dict(df, oversample_factor=1):
     """
     create label dict and representative sample for pig-only model
 
     :param df: formatted df
-    :param max_per_class: max annotations per class
-    :param min_per_class: min annotations per class
+    :param oversample_factor: oversample pig images to match number of non-pig images
     :return: sample df, label dict, col to stratify over test/val split
     """
-
-     # list species with fewer images than category min
-    too_few = list({k for (k, v) in Counter(df['common.name']).items() if v < min_per_class})
-
-    # remove mammals that are too small to be mistaken for pigs
-    too_small = ['squirrel_spp', 'American_Badger', 'American_Marten', 'American_Mink',
-                 'Jackrabbit', 'Prairie_Dog', 'Chipmunk', 'Cottontail_Rabbit', 'Spotted_Skunk',
-                 'Fisher', 'Mouse_Rat', 'Nine-Banded_Armadillo', 'North_American_Beaver',
-                 'North_American_Porcupine', 'Polar_Bear', 'Snowshoe_Hare', 'Striped_Skunk', 
-                 'Woodchuck', 'Yellow-Bellied_Marmot']
-
-    # include these species despite small sample sizes
-    always_include = ['White-nosed_Coati', 'Collared_Peccary', 'Jaguarundi', 'Margay', 'Jaguar', 'Ocelot']
-    too_few = [e for e in too_few if e not in always_include]
-
-    # filter exclusions out of df
-    df = df[~df['common.name'].isin(too_few)]
-    df = df[~df['common.name'].isin(too_small)]
-
-    #Remove birds and reptiles
-    df = df[df['class'] !='Reptilia']
-    df = df[df['class'] != 'Aves']
 
     # save original df to filter through later
     original_df = df
 
-    # list species with fewer than max cat images
-    fewerMax = list({k for (k, v) in Counter(df['common.name']).items() if v <= max_per_class})
-    # list species with greater images than max per category
-    overMax = list({k for (k, v) in Counter(df['common.name']).items() if v > max_per_class})
+    # separate pig, not-pig images
+    pig_df = df[df['common.name'] == 'Wild_Pig']
+    not_pig_df = df[df['common.name'] != 'Wild_Pig']
+
+    # get pig class size
+    pig_class_size = len(pig_df.filename.unique())
+
+    # remove non-pig fams with fewer than 300 images
+    too_few = list({k for (k, v) in Counter(not_pig_df['family']).items() if v < 300})
+    not_pig_df = not_pig_df[~not_pig_df['family'].isin(too_few)]
+
+    # remove images with nan values
+    not_pig_df = not_pig_df.dropna(subset=['family'])
+
+    # divide class size by number of non-pig families
+    num_non_pig_fams = len(not_pig_df.family.unique())
+    classwise_sample_n = round((pig_class_size * oversample_factor) / num_non_pig_fams)
+
+    # list families with fewer than max cat images
+    fewerMax = list({k for (k, v) in Counter(not_pig_df['family']).items() if v <= classwise_sample_n})
+    # list families with greater images than max per category
+    overMax = list({k for (k, v) in Counter(not_pig_df['family']).items() if v > classwise_sample_n})
 
     # shuffle rows before sampling
-    df = df.sample(frac=1, random_state=1).reset_index(drop=True)
+    not_pig_df = not_pig_df.sample(frac=1, random_state=1).reset_index(drop=True)
+
     # initiate representative sample df
-    balanced_df = pd.DataFrame(columns=list(df.columns))
+    balanced_df = pd.DataFrame(columns=list(not_pig_df.columns))
 
     # set threshold for db images to include
     thresh = 50
-    # loop over species with num images greater than max per category
+    # loop over families with num images greater than max per category
     for label in overMax:
         temp = balanced_df
-        subset_df = df[df['common.name'] == label]
+        subset_df = not_pig_df[not_pig_df['family'] == label]
         # list db with image numbers above and below threshold
         fewer = list({k for (k, v) in Counter(subset_df['database']).items() if v <= thresh})
         greater = list({k for (k, v) in Counter(subset_df['database']).items() if v > thresh})
         # add all images for db with image counts below threshold
         lt_df = subset_df[subset_df['database'].isin(fewer)]
-        # sample equally from remaining db until total images reaches max per species
-        size = max_per_class - lt_df.shape[0]
+        # sample equally from remaining db until total images reaches max per class
+        size = classwise_sample_n - lt_df.shape[0]
         ht_subset = subset_df[subset_df['database'].isin(greater)]
-        ht_df = pd.DataFrame(columns=list(df.columns))
+        ht_df = pd.DataFrame(columns=list(not_pig_df.columns))
         while ht_df.shape[0] <= size:
             tmp = ht_subset.groupby('database').sample(n=thresh, replace=False)
             ht_df = pd.concat([ht_df, tmp], ignore_index=True)
             ht_df = ht_df.drop_duplicates()
             if ht_df.shape[0] > size:
                 break
-        # add species sample to balanced df
-        spec_df = pd.concat([lt_df, ht_df], ignore_index=True)
-        balanced_df = pd.concat([temp, spec_df], ignore_index=True)
+        # add current sample to balanced df
+        pigsamp_df = pd.concat([lt_df, ht_df], ignore_index=True)
+        balanced_df = pd.concat([temp, pigsamp_df], ignore_index=True)
 
     # combine data and drop duplicates
-    df = pd.concat([balanced_df, df[df['common.name'].isin(fewerMax)]])
+    df = pd.concat([balanced_df, not_pig_df[not_pig_df['family'].isin(fewerMax)], pig_df])
     df = df.drop_duplicates()
 
     # locate images within df
     df = original_df.loc[original_df['filename'].isin(df['filename'])]
+
 
     # create dictionary of species labels
     label2target = {'empty':0, 'Wild_Pig':1, 'Not_Pig':2}
@@ -290,7 +287,7 @@ def pig_dict(df, max_per_class, min_per_class):
     # standardize label name
     df['LabelName'] = np.where(df['common.name'] == 'Wild_Pig', 'Wild_Pig', 'Not_Pig')
     # stratify across species for train/val split
-    columns2stratify = ['common.name']
+    columns2stratify = ['LabelName']
 
     return df, label2target, columns2stratify
 

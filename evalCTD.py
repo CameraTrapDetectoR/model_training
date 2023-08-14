@@ -42,10 +42,10 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set path to model run being deployed
-output_path = "./output/fasterRCNN_resnet_20230221_1612/"
+model_path = "./output/species_v2/"
 
 # open model arguments file
-with open(output_path + 'model_args.txt') as f:
+with open(model_path + 'model_args.txt') as f:
     model_args = {k: v for line in f for (k, v) in [line.strip().split(":")]}
 model_args['image width'] = int(model_args['image width'])
 model_args['image height'] = int(model_args['image height'])
@@ -57,8 +57,11 @@ w = model_args['image width']
 h = model_args['image height']
 
 # load model checkpoint
-checkpoint_path = output_path + "50epochs/checkpoint_50epochs.pth"
+checkpoint_path = model_path + "50epochs/checkpoint_50epochs.pth"
 checkpoint = torch.load(checkpoint_path, map_location=device)
+
+# load model type
+model_type = checkpoint['model_type']
 
 # load dictionaries
 label2target = checkpoint['label2target']
@@ -77,12 +80,13 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + '/PatClark/oregon/'
+IMAGE_PATH = "D:/"
+
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
 # define checkpoint path
-chkpt_pth = IMAGE_PATH + '_pred_checkpoint.csv'
+chkpt_pth = "./UC_Davis_" + model_type + '_pred_checkpoint.csv'
 
 #######
 ## -- Evaluate Model on Test Data
@@ -91,7 +95,7 @@ chkpt_pth = IMAGE_PATH + '_pred_checkpoint.csv'
 # create placeholder for predictions
 pred_df = pd.DataFrame(columns=['filename', 'file_id', 'class_name', 'confidence', 'bbox'])
 
-resume_from_checkpoint = True
+resume_from_checkpoint = False
 if resume_from_checkpoint == True:
     # load checkpoint file
     pred_checkpoint = pd.read_csv(chkpt_pth)
@@ -100,7 +104,7 @@ if resume_from_checkpoint == True:
     pred_df = pd.concat([pred_df, pred_checkpoint], ignore_index=True)
 
     # filter through image infos and update list to images not in pred_df
-    also_rans = pred_checkpoint['filename'].tolist()
+    also_rans = pred_df.filename.unique().tolist()
     image_infos = [x for x in image_infos if x not in also_rans]
 
 # deploy model
@@ -127,8 +131,6 @@ with torch.no_grad():
             image = image.to(device)
 
             # run input through the model
-            with torch.no_grad():
-                output = model(image)[0]
             output = model(image)[0]
 
             # extract prediction bboxes, labels, scores above score_thresh
@@ -189,7 +191,7 @@ with torch.no_grad():
             pred_df.to_csv(chkpt_pth, index=False)
 
 # save prediction and target dfs to csv
-pred_df.to_csv(IMAGE_PATH + '_pred_df.csv', index=False)
+pred_df.to_csv("./UC_Davis_" + model_type + '_pred_df.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
@@ -197,35 +199,45 @@ os.remove(chkpt_pth)
 #######
 ## -- Post Processing
 #######
-
+#TODO: keep troubleshooting this
 ## update pred_df to mimic results from R package, with additional columns for manual validation
 
-# Rename and remove columns
-pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
+# # Drop bboxes
+# pred_df = pred_df.drop(['bbox'], axis=1)
+#
+# # Rename and remove columns
+# pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
+#
+# # extract image name/structure from file_path
+# image_names = pred_df['file_path']
+# image_names = image_names.str.replace('/project/cper_ltar/camera_trap/CPER/raw/CPER5', '')
+# pred_df['image_name'] = image_names
+#
+# # get prediction counts for each image
+# cts = Counter(pred_df['image_name']).items()
+# pred_counts = pd.DataFrame.from_dict(cts)
+# pred_counts.columns = ['image_name', 'count']
+# pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
+#
+# # separate images with one prediction and images with >1 predictions
+# single_preds = pred_df[pred_df['count'] == 1]
+# multi_preds = pred_df[pred_df['count'] > 1]
+#
+# # format single preds
+# single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
+#
+# # drop counts from multi_preds
+# multi_preds = multi_preds.drop(['count'], axis=1)
+#
+# # get new counts based on image + predicted class
+# multi_cts = multi_preds.groupby(['image_name', 'prediction'])['prediction'].count().reset_index(name='count')
+#
+# # join multi_preds to new counts
+# multi_preds = multi_preds.merge(multi_cts, on=['image_name', 'prediction'], how='left')
+#
+# # filter multi_preds to lowest confidence prediction per image + class group
+# filtr_preds = multi_preds.groupby(['image_name', 'prediction']).apply(lambda x: x[x['confidence'] != min(x['confidence'])])
 
-# extract image name/structure from file_path
-image_names = pred_df['file_path']
-image_names = image_names.str.replace('/90daydata/cameratrapdetector//', '')
-pred_df['image_name'] = image_names
-
-# get prediction counts for each image
-cts = Counter(pred_df['image_name']).items()
-pred_counts = pd.DataFrame.from_dict(cts)
-pred_counts.columns = ['image_name', 'count']
-pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
-
-# separate images with one prediction and images with >1 predictions
-single_preds = pred_df[pred_df['count'] == 1]
-multi_preds = pred_df[pred_df['count'] > 1]
-
-# format single preds
-single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
-
-# format multiple preds
-multi_preds.groupby(['image_name', 'prediction']).sum() #TODO troubleshoot this
-
-# TODO: join formatted multi, single preds
-# TODO: remove bbox column
 # TODO: add columns for manual review: true_class, true_count, comments
 # TODO: save with new formatted name
 
