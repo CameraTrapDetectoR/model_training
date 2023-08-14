@@ -20,8 +20,8 @@ def class_range(model_type):
         max_per_class = 35000
         min_per_class = 5000
     if model_type == 'pig_only':
-        max_per_class = 10000
-        min_per_class = 300
+        max_per_class = 0
+        min_per_class = 0
     return max_per_class, min_per_class
 
 # match annotations to existing images
@@ -185,12 +185,13 @@ def format_vars(df):
     return df
 
 # split df into training / validation sets
-def split_df(df, columns2stratify):
+def split_df(df, columns2stratify, model_type):
     """
     Takes df, columns2stratify output from the wrangle_df function and splits the dataset by the stratified column.
     70% of total data is allocated to training, 20% allocated to validation, and 10% allocated to out-of-sample test
     :param df: sample df
     :param columns2stratify: column to stratify over sampling to preserve representation across split dfs
+    :param model_type:
     """
 
     df_unique_filename = df.drop_duplicates(subset='filename', keep='first')
@@ -201,10 +202,17 @@ def split_df(df, columns2stratify):
     train_df = df[df['filename'].isin(trn_ids)].reset_index(drop=True)
     rem_df = df[df['filename'].isin(rem_ids)].reset_index(drop=True)
     rem_unique_filename = rem_df.drop_duplicates(subset='filename', keep='first')
+
     # split remaining 30% with a 2/1 validation/test split
     val_ids, test_ids = train_test_split(rem_unique_filename['filename'], shuffle=True,
                                          stratify=rem_unique_filename[columns2stratify],
                                          test_size=0.33, random_state=22)
     val_df = rem_df[rem_df['filename'].isin(val_ids)].reset_index(drop=True)
     test_df = rem_df[rem_df['filename'].isin(test_ids)].reset_index(drop=True)
+
+    # use remaining 30% of images for validation and testing in pig_only model
+    if model_type == 'pig_only':
+        val_df = pd.concat([val_df, test_df], ignore_index=True)
+        test_df = val_df
+
     return train_df, val_df, test_df
