@@ -80,13 +80,13 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = "D:/"
+IMAGE_PATH = IMAGE_ROOT + "/Archbold_Training_data/Armadillo"
 
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
 # define checkpoint path
-chkpt_pth = "./UC_Davis_" + model_type + '_pred_checkpoint.csv'
+chkpt_pth = IMAGE_PATH + "_" + model_type + '_pred_checkpoint.csv'
 
 #######
 ## -- Evaluate Model on Test Data
@@ -191,7 +191,7 @@ with torch.no_grad():
             pred_df.to_csv(chkpt_pth, index=False)
 
 # save prediction and target dfs to csv
-pred_df.to_csv("./UC_Davis_" + model_type + '_pred_df.csv', index=False)
+pred_df.to_csv(IMAGE_PATH + "_" + model_type + '_results_raw.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
@@ -203,41 +203,53 @@ os.remove(chkpt_pth)
 ## update pred_df to mimic results from R package, with additional columns for manual validation
 
 # # Drop bboxes
-# pred_df = pred_df.drop(['bbox'], axis=1)
+pred_df = pred_df.drop(['bbox'], axis=1)
 #
 # # Rename and remove columns
-# pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
+pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
 #
 # # extract image name/structure from file_path
-# image_names = pred_df['file_path']
-# image_names = image_names.str.replace('/project/cper_ltar/camera_trap/CPER/raw/CPER5', '')
-# pred_df['image_name'] = image_names
+image_names = pred_df['file_path']
+image_names = image_names.str.replace('G:/!ML_training_datasets/Archbold_Training_data/', '')
+pred_df['image_name'] = image_names
 #
 # # get prediction counts for each image
-# cts = Counter(pred_df['image_name']).items()
-# pred_counts = pd.DataFrame.from_dict(cts)
-# pred_counts.columns = ['image_name', 'count']
-# pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
-#
+cts = Counter(pred_df['image_name']).items()
+pred_counts = pd.DataFrame.from_dict(cts)
+pred_counts.columns = ['image_name', 'count']
+pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
+
 # # separate images with one prediction and images with >1 predictions
-# single_preds = pred_df[pred_df['count'] == 1]
-# multi_preds = pred_df[pred_df['count'] > 1]
-#
+single_preds = pred_df[pred_df['count'] == 1]
+multi_preds = pred_df[pred_df['count'] > 1]
+
 # # format single preds
-# single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
+single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
 #
 # # drop counts from multi_preds
-# multi_preds = multi_preds.drop(['count'], axis=1)
-#
+multi_preds = multi_preds.drop(['count'], axis=1)
+
 # # get new counts based on image + predicted class
-# multi_cts = multi_preds.groupby(['image_name', 'prediction'])['prediction'].count().reset_index(name='count')
+multi_cts = multi_preds.groupby(['image_name', 'prediction'])['prediction'].count().reset_index(name='count')
 #
 # # join multi_preds to new counts
-# multi_preds = multi_preds.merge(multi_cts, on=['image_name', 'prediction'], how='left')
+multi_preds = multi_preds.merge(multi_cts, on=['image_name', 'prediction'], how='left', copy=False)
 #
-# # filter multi_preds to lowest confidence prediction per image + class group
-# filtr_preds = multi_preds.groupby(['image_name', 'prediction']).apply(lambda x: x[x['confidence'] != min(x['confidence'])])
+# # filter multi_preds to one prediction per image + class group - take highest confidence
+filtr_preds = multi_preds.groupby(['image_name', 'prediction']).apply(lambda x: x[x['confidence'] == max(x['confidence'])])
 
-# TODO: add columns for manual review: true_class, true_count, comments
+# join filtered multi_preds to single_preds
+preds = pd.concat([single_preds, filtr_preds], ignore_index=True).sort_values(['file_path'])
+
+# reorder image_name column
+preds = preds.loc[:, ['file_path', 'image_name', 'prediction', 'confidence', 'count']]
+
+# add columns for manual review: true_class, true_count, comments
+preds['true_class'] = ""
+preds['true_count'] = ""
+preds['comments'] = ""
+
 # TODO: save with new formatted name
+preds.to_csv(IMAGE_PATH + "_" + model_type + '_results_formatted.csv', index=False)
 
+# END
