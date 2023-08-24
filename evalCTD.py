@@ -57,7 +57,7 @@ w = model_args['image width']
 h = model_args['image height']
 
 # load model checkpoint
-checkpoint_path = model_path + "50epochs/checkpoint_50epochs.pth"
+checkpoint_path = model_path + "checkpoint_50epochs.pth"
 checkpoint = torch.load(checkpoint_path, map_location=device)
 
 # load model type
@@ -80,7 +80,7 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = IMAGE_ROOT + "/Archbold_Training_data/Armadillo"
+IMAGE_PATH = IMAGE_ROOT + "/Yancy/Control/NFS13"
 
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
@@ -199,8 +199,6 @@ os.remove(chkpt_pth)
 #######
 ## -- Post Processing
 #######
-#TODO: keep troubleshooting this
-## update pred_df to mimic results from R package, with additional columns for manual validation
 
 # # Drop bboxes
 pred_df = pred_df.drop(['bbox'], axis=1)
@@ -210,14 +208,17 @@ pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'predic
 #
 # # extract image name/structure from file_path
 image_names = pred_df['file_path']
-image_names = image_names.str.replace('G:/!ML_training_datasets/Archbold_Training_data/', '')
+image_names = image_names.str.replace('/project/cper_ltar/camera_trap/CPER/raw/CPER5/CPER_LongTerm_Check 7-26-23/', '')
 pred_df['image_name'] = image_names
+
+# TODO: get site or cam names
+
 #
 # # get prediction counts for each image
-cts = Counter(pred_df['image_name']).items()
+cts = Counter(pred_df['file_path']).items()
 pred_counts = pd.DataFrame.from_dict(cts)
-pred_counts.columns = ['image_name', 'count']
-pred_df = pred_df.merge(pred_counts, on='image_name', how='left')
+pred_counts.columns = ['file_path', 'count']
+pred_df = pred_df.merge(pred_counts, on='file_path', how='left')
 
 # # separate images with one prediction and images with >1 predictions
 single_preds = pred_df[pred_df['count'] == 1]
@@ -230,13 +231,13 @@ single_preds.loc[single_preds['prediction'] == 'empty', 'count'] = 0
 multi_preds = multi_preds.drop(['count'], axis=1)
 
 # # get new counts based on image + predicted class
-multi_cts = multi_preds.groupby(['image_name', 'prediction'])['prediction'].count().reset_index(name='count')
+multi_cts = multi_preds.groupby(['file_path', 'prediction'])['prediction'].count().reset_index(name='count')
 #
 # # join multi_preds to new counts
-multi_preds = multi_preds.merge(multi_cts, on=['image_name', 'prediction'], how='left', copy=False)
+multi_preds = multi_preds.merge(multi_cts, on=['file_path', 'prediction'], how='left', copy=False)
 #
 # # filter multi_preds to one prediction per image + class group - take highest confidence
-filtr_preds = multi_preds.groupby(['image_name', 'prediction']).apply(lambda x: x[x['confidence'] == max(x['confidence'])])
+filtr_preds = multi_preds.groupby(['file_path', 'prediction']).apply(lambda x: x[x['confidence'] == max(x['confidence'])])
 
 # join filtered multi_preds to single_preds
 preds = pd.concat([single_preds, filtr_preds], ignore_index=True).sort_values(['file_path'])
@@ -249,7 +250,7 @@ preds['true_class'] = ""
 preds['true_count'] = ""
 preds['comments'] = ""
 
-# TODO: save with new formatted name
+# save with new formatted name
 preds.to_csv(IMAGE_PATH + "_" + model_type + '_results_formatted.csv', index=False)
 
 # END
