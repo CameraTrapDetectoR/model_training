@@ -110,7 +110,7 @@ def format_vars(df):
     squirrels = ['Callospermophilus_lateralis', 'Glaucomys_sabrinus', 'Neosciurus_carolinensis',
                  'Otospermophilus_variegatus', 'Sciurus_aberti', 'Sciurus_griseus', 
                  'Sciurus_niger', 'Tamiasciurus_douglasii', 'Tamiasciurus-hudsonicus']
-    df.loc[df['species'].isin(squirrels), 'species'] = 'squirrel_spp'
+    df.loc[df['species'].isin(squirrels), 'species', 'common.name'] = 'squirrel_spp'
 
     # combine pigeons into one group
     # pigeons = ['Patagioenas_fasciata', 'Patagioenas_leucocephala']
@@ -119,11 +119,11 @@ def format_vars(df):
     # combine doves into one group
     doves = ['Columba_livia', 'Columbina_passerina', 'Leptotila verreauxi', 
              'Streptopelia_decaocto', 'Zenaida', 'Zenaida_asiatica', 'Zenaida_macroura']
-    df.loc[df['species'].isin(doves), 'species'] = 'dove_spp'
+    df.loc[df['species'].isin(doves), 'species', 'common.name'] = 'dove_spp'
 
     # combine blackbirds
     blackbirds = ['Agelaius_phoeniceus', 'Euphagus_cyanocephalus', 'Xanthocephalus_xanthocephalus']
-    df.loc[df['species'].isin(blackbirds), 'species'] = 'blackbird_spp'
+    df.loc[df['species'].isin(blackbirds), 'species', 'common.name'] = 'blackbird_spp'
 
     # combine chipmunks
     # chipmunks = ['Tamias_ruficaudus', 'Tamias_striatus']
@@ -216,3 +216,17 @@ def split_df(df, columns2stratify, model_type):
         test_df = val_df
 
     return train_df, val_df, test_df
+
+
+# get updated label taxonomic dictionary
+def taxo_dict(df):
+    """
+    Use annotations file to create a taxonomic dictionary of available classes
+    :param df: annotations file
+    :return: model class taxonomic dictionary
+    """
+    taxos = df[['common.name.general', 'common.name.type', 'species',
+                'genus', 'family', 'order', 'class']
+    taxo_df = taxos.drop_duplicates()
+
+    return taxo_df
