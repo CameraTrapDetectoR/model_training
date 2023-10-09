@@ -3,6 +3,7 @@
 import pandas as pd
 from collections import Counter
 
+import cv2
 
 
 def format_evals(pred_df):
@@ -55,3 +56,42 @@ def format_evals(pred_df):
     preds['comments'] = ""
 
     return preds
+
+
+# plot predictions on an image
+def plot_image(image, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH):
+    """
+    Plot predicted bounding boxes
+    :param image: original image file
+    :param bbs: predicted bounding boxes
+    :param confs: predicted confidence scores
+    :param labels: predicted class labels
+    :param img_path: filepath to original image
+    :param IMAGE_PATH: user-provided path to image directory
+    :param PRED_PATH: directory for placing plotted images
+    :return: plotted image
+    """
+
+    # get image width and height
+    img_h, img_w = image.shape[:2]
+
+    # loop through predictions
+    for box in range(len(bbs)):
+        # extract box into coordinates
+        xmin = int(bbs[box][0] * img_w)
+        ymin = int(bbs[box][1] * img_h)
+        xmax = int(bbs[box][2] * img_w)
+        ymax = int(bbs[box][3] * img_h)
+
+        # plot box
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), color=(0, 0, 255), thickness=2)
+        # add conf score and class label
+        cv2.putText(image, "conf = " + str(round(confs[box], 2)), (xmin + 20, ymin),
+                    cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(image, str(round(labels[box], 2)), (xmin + 20, ymin + 20),
+                    cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2, cv2.LINE_AA)
+
+    # make new image name
+    new_name = img_path.replace(IMAGE_PATH + "/", "").replace("/", "_")
+    # save plotted image
+    cv2.imwrite(PRED_PATH + new_name, image)
