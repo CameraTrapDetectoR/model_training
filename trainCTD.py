@@ -155,7 +155,7 @@ if resume:
 # model setup for new training
 else:
     # Set model type: options = 'general', 'family', 'species', 'pig_only'
-    model_type = 'pig_only'
+    model_type = 'species'
 
     max_per_class, min_per_class = class_range(model_type)
 

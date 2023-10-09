@@ -1,5 +1,12 @@
 """
-Script to deploy CameraTrapDetectoR model on out of sample data
+Script to deploy CameraTrapDetectoR model in eval mode via command line
+
+This module allows users to run the suite of CameraTrapDetectoR models on a personal computer or
+on a high-performance computing (HPC) system.
+
+Need to find a way to share the appropriate folder with model_args.txt and a model checkpoint
+
+
 """
 
 import os
@@ -8,26 +15,23 @@ from PIL import ImageFile
 import numpy as np
 import pandas as pd
 import cv2
-import exif
 
 from utils.hyperparameters import get_anchors
 from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
 
-from utils.post_process import format_evals, plot_image
 from collections import Counter
 
+import argparse
+import sys
 
 #######
 ## -- Prepare System and Data for Model Training
 #######
 
 # Set location
-if os.name == 'posix':
-    local = False
-else:
-    local = True
+
 
 # Set paths
 if local:
@@ -37,12 +41,24 @@ else:
     IMAGE_ROOT = "/90daydata/cameratrapdetector/trainimages"
     os.chdir('/project/cameratrapdetector')
 
-# set device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(device)
-
 # allow truncated images to load
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+# determine if using CPU or GPU
+def get_device():
+    # load device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # print message
+    if device.type == 'cuda':
+        print('Images will be run with GPU')
+    else:
+        print('Images will be run with CPU')
+
+    return device
+
+
+
 
 # set path to model run being deployed
 model_path = "./output/species_v2/"
@@ -74,29 +90,40 @@ target2label = {t: l for l, t in label2target.items()}
 anchor_sizes, anchor_gen = get_anchors(h=h)
 
 # initiate model
-cnn_backbone = 'resnet'
-num_classes = checkpoint['num_classes']
-model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
+def get_model(checkpoint):
+    cnn_backbone = 'resnet'
+    num_classes = checkpoint['num_classes']
+    model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
 
-# load model weights
-model.load_state_dict(checkpoint['state_dict'])
-model.to(device)
+    # load model weights
+    model.load_state_dict(checkpoint['state_dict'])
+
+    return model.to(device)
+
+
 
 # set image directory
-IMAGE_PATH = 'C:/Users/amira.burns/USDA/REE-ARS-Dubois-Range - Table Mtn Camera Traps'
 
-# load image names
-image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
-               os.path.splitext(f)[1].lower() == '.jpg']
+
+# load image filepaths
+def image_infos(image_dir):
+    # walk through image_dir and make list of all jpg, jpeg files
+    image_jpgs = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(image_dir) for f in fn if
+                   os.path.splitext(f)[1].lower() == '.jpg']
+    image_jpegs = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(image_dir) for f in fn if
+                  os.path.splitext(f)[1].lower() == '.jpeg']
+    # combine lists
+    image_jpgs += image_jpegs
+    # remove duplicates
+    image_infos = [i for n, i in enumerate(image_jpgs) if i not in image_jpgs[:n]]
+
+    return image_infos
+
+
+
 # define checkpoint path
-chkpt_pth = IMAGE_PATH + '/TableMtn_' + model_type + '_pred_checkpoint.csv'
-
-# Create output dir to hold plotted images
-plot_images = True
-if plot_images == True:
-    PRED_PATH = IMAGE_PATH + '/prediction_plots/'
-    if os.path.exists(PRED_PATH) == False:
-        os.mkdir(IMAGE_PATH + '/prediction_plots/')
+# chkpt_pth = IMAGE_PATH + "_" + model_type + '_pred_checkpoint.csv'
+chkpt_pth = IMAGE_ROOT + "/TPWD_Gallagher/2016/2016.05.19/SAB309_" + model_type + '_pred_checkpoint.csv'
 
 #######
 ## -- Evaluate Model on Test Data
@@ -126,9 +153,9 @@ with torch.no_grad():
             # set image path
             img_path = image_infos[i]
             # open image
-            img_org = cv2.imread(img_path)
+            img = cv2.imread(img_path)
             # reformat color channels
-            img = cv2.cvtColor(img_org, cv2.COLOR_BGR2RGB)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             # resize image so bboxes can also be converted
             img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
             img = img.astype(np.float32) / 255.
@@ -160,10 +187,6 @@ with torch.no_grad():
 
             bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
-            # normalize bboxes
-            norms = torch.tensor([1/w, 1/h, 1/w, 1/h])
-            bbs *= norms
-
             # format predictions
             bbs = bbs.tolist()
             confs = confs.tolist()
@@ -185,12 +208,6 @@ with torch.no_grad():
                     'confidence': confs,
                     'bbox': bbs
                 })
-
-            # plot image if argument selected
-            if plot_images==True & len(bbs) > 0:
-                plot_image(img_org, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH)
-
-
         except Exception as err:
             pred_df_i = pd.DataFrame({
                 'filename': image_infos[i],
@@ -212,7 +229,7 @@ with torch.no_grad():
 
 # save prediction and target dfs to csv
 # pred_df.to_csv(IMAGE_ROOT + "_" + model_type + '_results_raw.csv', index=False)
-pred_df.to_csv(IMAGE_PATH + '/TableMtn_' + model_type + '_results_raw.csv', index=False)
+pred_df.to_csv(IMAGE_ROOT + "/TPWD_Gallagher/2016/2016.05.19/SAB307_" + model_type + '_results_raw.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
@@ -229,20 +246,20 @@ pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'predic
 
 # # extract image name/structure from file_path
 image_names = pred_df['file_path']
-# image_names = image_names.str.replace('D:/2016.05.19/', '')
+image_names = image_names.str.replace('D:/2016.05.19/', '')
 pred_df['image_name'] = image_names
-#
-# # split image name to extract site, camera, date info
-# image_parts = image_names.str.rsplit("/", n=3, expand=True)
-#
-# # site name
-# pred_df['site'] = image_parts[0].str.slice(stop=3)
-#
-# # camera name
-# pred_df['cam_id'] = image_parts[0]
-#
-# # timestamp
-# pred_df['timestamp'] = image_parts[1].str.replace(".JPG", "").str.replace("-", ":")
+
+# split image name to extract site, camera, date info
+image_parts = image_names.str.rsplit("/", n=3, expand=True)
+
+# site name
+pred_df['site'] = image_parts[0].str.slice(stop=3)
+
+# camera name
+pred_df['cam_id'] = image_parts[0]
+
+# timestamp
+pred_df['timestamp'] = image_parts[1].str.replace(".JPG", "").str.replace("-", ":")
 
 #
 # # get prediction counts for each image
@@ -284,7 +301,98 @@ preds['comments'] = ""
 
 # save with new formatted name
 # preds.to_csv(IMAGE_PATH + "_" + model_type + '_results_formatted.csv', index=False)
-preds.to_csv(IMAGE_ROOT + "/dataset_name" + model_type + '_results_formatted.csv',
+preds.to_csv(IMAGE_ROOT + "/TPWD_Gallagher/2016/2016.05.19/SAB307_" + model_type + '_results_formatted.csv',
              index=False)
 
+
 # END
+
+
+##### -- COMMAND-LINE Driver
+
+def main():
+    ## -- Add model arguments
+    parser = argparse.ArgumentParser(
+        description='Module to run CameraTrapDetectoR models on HPC via command line arguments.' + \
+                    'Two final results files will be provided. Raw results will contain one row for each detection with bounding box.' + \
+                    'Formatted results will include one row for each detected class per image with predicted count.'
+    )
+    parser.add_argument(
+        'model_folder',
+        help='Path to model files'
+    )
+    parser.add_argument(
+        'image_dir',
+        help='Path to image directory. The script will automatically recurse into sub-folders of this directory.' + \
+             'Currently only .jpg files are accepted.'
+    )
+    parser.add_argument(
+        'output_dir',
+        help='Path to output directory where your results files will be stored - a new folder will be created.' + \
+             'If left NULL, results will be stored in your image_dir.'
+    )
+    parser.add_argument(
+        '--plot_bboxes',
+        action='store_true',
+        help='Create image copies with bounding boxes in your output_dir.'
+    )
+    parser.add_argument(
+        '--score_threshold',
+        type=float,
+        default=0,
+        help='Filter out predictions below this confidence threshold. Default is 0'
+    )
+    parser.add_argument(
+        '--plot_images',
+        action='store_true',
+        help='Plot image copies with bounding boxes and predicted classes drawn.'
+    )
+    parser.add_argument(
+        '--checkpoint_frequency',
+        type=int,
+        default=10,
+        help='Write raw results to a temporary file every N images; default is 10.' + \
+             'Setting the value to -1 will disable checkpointing but is not recommended.'
+    )
+    parser.add_argument(
+        '--resume_from_checkpoint',
+        type=str,
+        default=None,
+        help='Resume model run from checkpoint file. Provide full path.'
+    )
+
+    if len(sys.argv[1:]) == 0:
+        parser.print_help()
+        parser.exit()
+
+    args = parser.parse_args()
+
+    # confirm model folder exists
+    assert os.path.isdir(args.model_folder), \
+        'model_folder {} does not exist'.format(args.model_folder)
+    # confirm all files in model folder
+    assert os.path.exists(model_path + '/model_args.txt'), \
+        'Model args text file does not exist in model_folder'
+    assert os.path.exists(model_path + '/model_checkpoint.pth'), \
+        'Model checkpoint .pth file does not exist in model_folder'
+
+    # confirm image dir exists
+    assert os.path.isdir(args.image_dir), \
+        'image_dir {} does not exist'.format(args.image_dir)
+
+    # confirm score_threshold is between [0, 1]
+    assert 0.0 < args.score_threshold <= 1.0, 'Confidence threshold must be between 0 and 1'
+
+    # load checkpoint if available
+    if args.resume_from_checkpoint is not None:
+        # confirm checkpoint path exists
+        assert os.path.exists(args.resume_from_checkpoint), 'File at resume_from_checkpoint specified does not exist'
+
+        # load checkpoint file
+        pred_checkpoint = pd.read_csv(args.resume_from_checkpoing)
+
+        # get list of images already run
+        also_rans = pred_checkpoint.filename.unique().tolist()
+
+        # inform user of checkpoint length
+        print('Loaded checkpointed results from {} previously-run images'.format(len(also_rans)))
