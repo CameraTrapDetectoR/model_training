@@ -168,6 +168,7 @@ with torch.no_grad():
             bbs = bbs.tolist()
             confs = confs.tolist()
             labels = labels.tolist()
+            class_names = [target2label[a] for a in labels]
 
             if len(bbs) == 0:
                 pred_df_i = pd.DataFrame({
@@ -181,14 +182,14 @@ with torch.no_grad():
                 pred_df_i = pd.DataFrame({
                     'filename': image_infos[i],
                     'file_id': image_infos[i][:-4],
-                    'class_name': [target2label[a] for a in labels],
+                    'class_name': class_names,
                     'confidence': confs,
                     'bbox': bbs
                 })
 
             # plot image if argument selected
-            if plot_images==True & len(bbs) > 0:
-                plot_image(img_org, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH)
+            if plot_images & (len(bbs)>0):
+                plot_image(img_org, bbs, confs, class_names, img_path, IMAGE_PATH, PRED_PATH)
 
 
         except Exception as err:
