@@ -86,9 +86,9 @@ def plot_image(image, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH):
         # plot box
         cv2.rectangle(image, (xmin, ymin), (xmax, ymax), color=(0, 0, 255), thickness=2)
         # add conf score and class label
-        cv2.putText(image, "conf = " + str(round(confs[box], 2)), (xmin + 20, ymin),
+        cv2.putText(image, "conf = " + str(round(confs[box], 2)), (xmin + 20, ymin + 20),
                     cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(image, str(round(labels[box], 2)), (xmin + 20, ymin + 20),
+        cv2.putText(image, str(labels[box]), (xmin + 20, ymin),
                     cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2, cv2.LINE_AA)
 
     # make new image name
