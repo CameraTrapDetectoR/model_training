@@ -15,10 +15,9 @@ from models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
 
-from utils.post_process import format_evals
+from utils.post_process import format_evals, plot_image
 from collections import Counter
 
-import argparse
 
 #######
 ## -- Prepare System and Data for Model Training
@@ -84,21 +83,20 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = "D:/2016.05.19/SAB402"
+IMAGE_PATH = 'C:/Users/amira.burns/USDA/REE-ARS-Dubois-Range - Table Mtn Camera Traps'
 
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
 # define checkpoint path
-# chkpt_pth = IMAGE_PATH + "_" + model_type + '_pred_checkpoint.csv'
-chkpt_pth = IMAGE_ROOT + "/TPWD_Gallagher/2016/2016.05.19/SAB402_" + model_type + '_pred_checkpoint.csv'
+chkpt_pth = IMAGE_PATH + '/TableMtn_' + model_type + '_pred_checkpoint.csv'
 
 # Create output dir to hold plotted images
 plot_images = True
 if plot_images == True:
     PRED_PATH = IMAGE_PATH + '/prediction_plots/'
-    os.mkdir(PRED_PATH = IMAGE_PATH + '/prediction_plots/')
-
+    if os.path.exists(PRED_PATH) == False:
+        os.mkdir(IMAGE_PATH + '/prediction_plots/')
 
 #######
 ## -- Evaluate Model on Test Data
@@ -162,32 +160,14 @@ with torch.no_grad():
 
             bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
+            # normalize bboxes
+            norms = torch.tensor([1/w, 1/h, 1/w, 1/h])
+            bbs *= norms
+
             # format predictions
             bbs = bbs.tolist()
             confs = confs.tolist()
             labels = labels.tolist()
-
-            # plot image if argument selected
-            if plot_images == True & len(bbs) > 0:
-                # get image width and height
-                img_h, img_w = img_org.shape[:2]
-
-                # loop through predictions
-                for box in range(len(bbs)):
-                    #TODO: extract box into coordinates
-                    xmin = int(bbs[box][0] * img_w)
-                    ymin = int(bbs[box][1] * img_h)
-                    xmax = int(bbs[box][2] * img_w)
-                    ymax = int(bbs[box][3] * img_h)
-
-                    #TODO: plot box
-                    cv2.rectangle(img_org, (xmin, ymin), (xmax, ymax), color=(0, 0, 255), thickness=2)
-                    #TODO: add conf score and class label
-                    cv2.putText(img_org, "conf = " + str(round(confs[box].item(), 2)), (xmin + 20, ymin),
-                                cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2, cv2.LINE_AA)
-
-
-
 
             if len(bbs) == 0:
                 pred_df_i = pd.DataFrame({
@@ -205,6 +185,12 @@ with torch.no_grad():
                     'confidence': confs,
                     'bbox': bbs
                 })
+
+            # plot image if argument selected
+            if plot_images==True & len(bbs) > 0:
+                plot_image(img_org, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH)
+
+
         except Exception as err:
             pred_df_i = pd.DataFrame({
                 'filename': image_infos[i],
@@ -226,7 +212,7 @@ with torch.no_grad():
 
 # save prediction and target dfs to csv
 # pred_df.to_csv(IMAGE_ROOT + "_" + model_type + '_results_raw.csv', index=False)
-pred_df.to_csv(IMAGE_ROOT + "/TPWD_Gallagher/2016/2016.05.19/SAB402_" + model_type + '_results_raw.csv', index=False)
+pred_df.to_csv(IMAGE_PATH + '/TableMtn_' + model_type + '_results_raw.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
@@ -301,6 +287,4 @@ preds['comments'] = ""
 preds.to_csv(IMAGE_ROOT + "/dataset_name" + model_type + '_results_formatted.csv',
              index=False)
 
-
 # END
-
