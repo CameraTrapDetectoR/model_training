@@ -3,20 +3,17 @@
 import pandas as pd
 from collections import Counter
 
+import torch
 import cv2
 
 
-def format_evals(pred_df):
+def format_evals(pred_df, image_dir):
     # # Drop bboxes
     pred_df = pred_df.drop(['bbox'], axis=1)
     #
     # # Rename and remove columns
     pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
-
-    # # extract image name/structure from file_path
-    image_names = pred_df['file_path']
-    image_names = image_names.str.replace('D:/2016.05.19/', '')
-    pred_df['image_name'] = image_names
+    pred_df['image_id'] = pred_df.file_path.str.replace(image_dir, "")
 
     # # get prediction counts for each image
     cts = Counter(pred_df['file_path']).items()
@@ -48,7 +45,7 @@ def format_evals(pred_df):
     preds = pd.concat([single_preds, filtr_preds], ignore_index=True).sort_values(['file_path'])
 
     # reorder image_name column
-    preds = preds.loc[:, ['file_path', 'image_name', 'prediction', 'confidence', 'count']]
+    preds = preds.loc[:, ['file_path', 'image_id', 'prediction', 'confidence', 'count']]
 
     # add columns for manual review: true_class, true_count, comments
     preds['true_class'] = ""
@@ -95,3 +92,10 @@ def plot_image(image, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH):
     new_name = img_path.replace(IMAGE_PATH + "/", "").replace("/", "_")
     # save plotted image
     cv2.imwrite(PRED_PATH + new_name, image)
+
+# normalize bboxes to proportion of image
+def normalize_bboxes(w, h, bbs):
+    # get fractional w x h
+    norms = torch.tensor([1 / w, 1 / h, 1 / w, 1 / h])
+    bbs *= norms
+    return bbs
