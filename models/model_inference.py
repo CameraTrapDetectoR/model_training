@@ -112,3 +112,4 @@ def calculate_metrics(preds, targets, target2label):
     results_df = results_df.drop(['target'], axis=1)
 
     return results_df
+

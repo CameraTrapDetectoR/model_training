@@ -8,7 +8,7 @@ from PIL import ImageFile
 import numpy as np
 import pandas as pd
 import cv2
-import exif
+
 
 from utils.hyperparameters import get_anchors
 from models.backbones import load_fasterrcnn
@@ -45,7 +45,7 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set path to model run being deployed
-model_path = "./output/species_v2/"
+model_path = "./output/family_v2/"
 
 # open model arguments file
 with open(model_path + 'model_args.txt') as f:
@@ -70,6 +70,11 @@ model_type = checkpoint['model_type']
 label2target = checkpoint['label2target']
 target2label = {t: l for l, t in label2target.items()}
 
+# make sure the empty entry is at the beginning of the dictionary
+keys = sorted(target2label.keys())
+vals = [target2label[k] for k in keys]
+target2label = dict(zip(keys, vals))
+
 # reload anchor generator
 anchor_sizes, anchor_gen = get_anchors(h=h)
 
@@ -88,15 +93,18 @@ IMAGE_PATH = 'C:/Users/amira.burns/USDA/REE-ARS-Dubois-Range - Table Mtn Camera 
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
                os.path.splitext(f)[1].lower() == '.jpg']
+
+image_infos = [f for f in image_infos if not 'prediction_plots' in f]
+
 # define checkpoint path
 chkpt_pth = IMAGE_PATH + '/TableMtn_' + model_type + '_pred_checkpoint.csv'
 
 # Create output dir to hold plotted images
 plot_images = True
 if plot_images == True:
-    PRED_PATH = IMAGE_PATH + '/prediction_plots/'
+    PRED_PATH = IMAGE_PATH + '/' + model_type + '_prediction_plots/'
     if os.path.exists(PRED_PATH) == False:
-        os.mkdir(IMAGE_PATH + '/prediction_plots/')
+        os.mkdir(PRED_PATH)
 
 #######
 ## -- Evaluate Model on Test Data
@@ -176,7 +184,7 @@ with torch.no_grad():
                     'file_id': image_infos[i][:-4],
                     'class_name': 'empty',
                     'confidence': 1,
-                    'bbox': [[0, 0, w, h]]
+                    'bbox': [[0, 0, 0, 0]]
                 })
             else:
                 pred_df_i = pd.DataFrame({
@@ -228,23 +236,23 @@ pred_df = pred_df.drop(['bbox'], axis=1)
 # # Rename and remove columns
 pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
 
-# # extract image name/structure from file_path
-image_names = pred_df['file_path']
-# image_names = image_names.str.replace('D:/2016.05.19/', '')
-pred_df['image_name'] = image_names
-#
+# remove prefix from filepath
+pred_df['file_path'] = pred_df.file_path.str.replace("C:/Users/amira.burns/USDA/", "")
+
 # # split image name to extract site, camera, date info
-# image_parts = image_names.str.rsplit("/", n=3, expand=True)
+image_parts = pred_df.file_path.str.rsplit("/", n=4, expand=True)
 #
-# # site name
-# pred_df['site'] = image_parts[0].str.slice(stop=3)
+# site name
+pred_df['project'] = image_parts[0]
 #
 # # camera name
-# pred_df['cam_id'] = image_parts[0]
+pred_df['cam_id'] = image_parts[1]
 #
-# # timestamp
-# pred_df['timestamp'] = image_parts[1].str.replace(".JPG", "").str.replace("-", ":")
+# timestamp
+pred_df['collection_date'] = image_parts[2]
 
+# image name
+pred_df['image_name'] = image_parts[3]
 #
 # # get prediction counts for each image
 cts = Counter(pred_df['file_path']).items()
@@ -276,7 +284,8 @@ filtr_preds = multi_preds.groupby(['file_path', 'prediction']).apply(
 preds = pd.concat([single_preds, filtr_preds], ignore_index=True).sort_values(['file_path'])
 
 # reorder image_name column
-preds = preds.loc[:, ['file_path', 'image_name', 'prediction', 'confidence', 'count']]
+preds = preds.loc[:, ['file_path', 'project', 'cam_id', 'image_name',
+                      'collection_date', 'prediction', 'confidence', 'count']]
 
 # add columns for manual review: true_class, true_count, comments
 preds['true_class'] = ""
@@ -285,7 +294,11 @@ preds['comments'] = ""
 
 # save with new formatted name
 # preds.to_csv(IMAGE_PATH + "_" + model_type + '_results_formatted.csv', index=False)
-preds.to_csv(IMAGE_ROOT + "/dataset_name" + model_type + '_results_formatted.csv',
+preds.to_csv(IMAGE_PATH + "/TableMtn_" + model_type + '_results_formatted.csv',
              index=False)
+
+# TODO: write predictions to image metadata
+
+
 
 # END
