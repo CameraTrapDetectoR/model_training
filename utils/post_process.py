@@ -6,14 +6,21 @@ from collections import Counter
 import torch
 import cv2
 
+from PIL import Image
+from PIL.ExifTags import TAGS
 
 def format_evals(pred_df, image_dir):
-    # # Drop bboxes
+    # Drop bboxes
     pred_df = pred_df.drop(['bbox'], axis=1)
-    #
-    # # Rename and remove columns
+
+    # Rename and remove columns
     pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
-    pred_df['image_id'] = pred_df.file_path.str.replace(image_dir, "")
+
+    # make sure unicode characters are handled properly
+    image_dir = image_dir.encode('unicode_escape').decode('ascii')
+
+    # create image id column that removes the image dir
+    pred_df['image_id'] = pred_df.file_path.str.replace(image_dir, "", regex=True)
 
     # # get prediction counts for each image
     cts = Counter(pred_df['file_path']).items()
@@ -38,14 +45,14 @@ def format_evals(pred_df, image_dir):
     multi_preds = multi_preds.merge(multi_cts, on=['file_path', 'prediction'], how='left', copy=False)
     #
     # # filter multi_preds to one prediction per image + class group - take highest confidence
-    filtr_preds = multi_preds.groupby(['file_path', 'prediction']).apply(
+    filtr_preds = multi_preds.groupby(['file_path', 'prediction'], group_keys=True).apply(
         lambda x: x[x['confidence'] == max(x['confidence'])])
 
     # join filtered multi_preds to single_preds
     preds = pd.concat([single_preds, filtr_preds], ignore_index=True).sort_values(['file_path'])
 
     # reorder image_name column
-    preds = preds.loc[:, ['file_path', 'image_id', 'prediction', 'confidence', 'count']]
+    preds = preds.loc[:, ['file_path', 'image_id', 'prediction', 'confidence', 'count', 'timestamp']]
 
     # add columns for manual review: true_class, true_count, comments
     preds['true_class'] = ""
@@ -56,7 +63,7 @@ def format_evals(pred_df, image_dir):
 
 
 # plot predictions on an image
-def plot_image(image, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH):
+def plot_image(image, bbs, confs, labels, img_path, PRED_PATH, IMAGE_PATH):
     """
     Plot predicted bounding boxes
     :param image: original image file
@@ -64,8 +71,8 @@ def plot_image(image, bbs, confs, labels, img_path, IMAGE_PATH, PRED_PATH):
     :param confs: predicted confidence scores
     :param labels: predicted class labels
     :param img_path: filepath to original image
-    :param IMAGE_PATH: user-provided path to image directory
     :param PRED_PATH: directory for placing plotted images
+    :param IMAGE_PATH: user-provided path to image directory
     :return: plotted image
     """
 
@@ -99,3 +106,18 @@ def normalize_bboxes(w, h, bbs):
     norms = torch.tensor([1 / w, 1 / h, 1 / w, 1 / h])
     bbs *= norms
     return bbs
+
+def get_metadata(img_path):
+    """
+    Code to extract image metadata. Currently only extracts timestamp,
+    :param img_path: path to image file
+    :return: timestamp string
+    """
+    img = Image.open(img_path)
+    PIL_tags = {}
+    for tag, value in img._getexif().items():
+        if tag in TAGS:
+            PIL_tags[TAGS[tag]] = value
+    timestamp = PIL_tags.get('DateTimeOriginal')
+
+    return timestamp

@@ -1,4 +1,4 @@
-name: cameratrapdetector-eval
+name: ctd-deploy-model
 
 channels:
   - conda-forge
