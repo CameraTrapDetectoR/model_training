@@ -45,7 +45,7 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set path to model run being deployed
-model_path = "./output/family_v2/"
+model_path = "./output/general_v2/"
 
 # open model arguments file
 with open(model_path + 'model_args.txt') as f:
@@ -100,7 +100,7 @@ image_infos = [f for f in image_infos if not 'prediction_plots' in f]
 chkpt_pth = IMAGE_PATH + '/TableMtn_' + model_type + '_pred_checkpoint.csv'
 
 # Create output dir to hold plotted images
-plot_images = True
+plot_images = False
 if plot_images == True:
     PRED_PATH = IMAGE_PATH + '/' + model_type + '_prediction_plots/'
     if os.path.exists(PRED_PATH) == False:
@@ -232,7 +232,7 @@ os.remove(chkpt_pth)
 
 # # Drop bboxes
 pred_df = pred_df.drop(['bbox'], axis=1)
-#
+
 # # Rename and remove columns
 pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
 
