@@ -44,10 +44,10 @@ else:
 
 # Set paths
 if local:
-    IMAGE_ROOT = 'G:/!ML_training_datasets/!VarifiedPhotos'
-    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
+    IMAGE_ROOT = 'path/to/!VarifiedPhotos'
+    os.chdir("path/to/Projects/CameraTrapDetectoR")
 else:
-    IMAGE_ROOT = "/90daydata/cameratrapdetector/trainimages"
+    IMAGE_ROOT = "/path/to/cameratrapdetector/trainimages"
     os.chdir('/project/cameratrapdetector')
 
 # set device
@@ -60,7 +60,7 @@ resume = False
 # model setup if resuming training
 if resume:
     # set output path
-    output_path = "./output/fasterRCNN_resnet_20230221_1612/"
+    output_path = "./path/to/prev/model/train/data/"
 
     # load datasets
     train_df = pd.read_csv(output_path + "train_df.csv")
