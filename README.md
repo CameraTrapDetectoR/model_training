@@ -52,7 +52,7 @@ Download the model architecture, model weights, and auxiliary information needed
    - [Species V2 Model](https://data.nal.usda.gov/system/files/species_v2_cl_0.zip)
 
 The [user tutorial] assumes you are putting the model folder in the same project directory as this repo; you can place it anywhere you like, just adjust accordingly. 
-Once you download the model folder to its final location, unzip it. **DO NOT** rename, modify, or delete anything related to this folder or your model will not run. Inside each folder are three files specific to running that model, titled *cameratrapdetector_metadata.cfg*, *model_args.txt*, and *model_checkpoint.pth*. Do not change anything! Just unzip it and leave it.    
+Once you download the model folder to its final location, unzip it. **DO NOT** rename, modify, or delete anything inside this folder or your model will not run. Inside each folder are three files specific to running that model, titled *cameratrapdetector_metadata.cfg*, *model_args.txt*, and *model_checkpoint.pth*. Do not change anything! Just unzip it and leave it.    
 
 Now you are ready to run the CameraTrapDetectoR models!    
 
