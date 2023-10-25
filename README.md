@@ -2,7 +2,9 @@
 
 This repository contains the Python code used to train new versions of the CameraTrapDetectoR models. 
 
-# CameraTrapDetectoR Model Deployment
+# CameraTrapDetectoR Model Deployment    
+
+   We also provide documentation and assistance for deploying our models via Python script on the command line. The *deploy_model.py* script provides similar output to the `deploy_model` function in the CameraTrapDetectoR package. This approach allows users to take advantage of a GPU-enabled machine or run the models via batch mode on a remote instance, for example on a high-performance computing (HPC) cluster.  
 
 ## Installation
 
