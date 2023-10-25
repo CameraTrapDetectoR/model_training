@@ -31,10 +31,10 @@ else:
 
 # Set paths
 if local:
-    IMAGE_ROOT = 'G:/!ML_training_datasets'
-    os.chdir("C:/Users/Amira.Burns/OneDrive - USDA/Projects/CameraTrapDetectoR")
+    IMAGE_ROOT = 'path/to/out_of_sample/images'
+    os.chdir("path/to/Projects/CameraTrapDetectoR")
 else:
-    IMAGE_ROOT = "/90daydata/cameratrapdetector/trainimages"
+    IMAGE_ROOT = "/path/to/cameratrapdetector/outofsample/images"
     os.chdir('/project/cameratrapdetector')
 
 # set device
@@ -45,7 +45,7 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set path to model run being deployed
-model_path = "./output/family_v2/"
+model_path = "./output/general_v2/"
 
 # open model arguments file
 with open(model_path + 'model_args.txt') as f:
@@ -88,7 +88,7 @@ model.load_state_dict(checkpoint['state_dict'])
 model.to(device)
 
 # set image directory
-IMAGE_PATH = 'C:/Users/amira.burns/USDA/REE-ARS-Dubois-Range - Table Mtn Camera Traps'
+IMAGE_PATH = './path/to/image/dataset'
 
 # load image names
 image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_PATH) for f in fn if
@@ -97,10 +97,10 @@ image_infos = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.wal
 image_infos = [f for f in image_infos if not 'prediction_plots' in f]
 
 # define checkpoint path
-chkpt_pth = IMAGE_PATH + '/TableMtn_' + model_type + '_pred_checkpoint.csv'
+chkpt_pth = IMAGE_PATH + '/ProjectName_' + model_type + '_pred_checkpoint.csv'
 
 # Create output dir to hold plotted images
-plot_images = True
+plot_images = False
 if plot_images == True:
     PRED_PATH = IMAGE_PATH + '/' + model_type + '_prediction_plots/'
     if os.path.exists(PRED_PATH) == False:
@@ -232,12 +232,12 @@ os.remove(chkpt_pth)
 
 # # Drop bboxes
 pred_df = pred_df.drop(['bbox'], axis=1)
-#
+
 # # Rename and remove columns
 pred_df = pred_df.rename(columns={'filename': 'file_path', 'class_name': 'prediction'}).drop(['file_id'], axis=1)
 
 # remove prefix from filepath
-pred_df['file_path'] = pred_df.file_path.str.replace("C:/Users/amira.burns/USDA/", "")
+pred_df['file_path'] = pred_df.file_path.str.replace("/unwanted/dir/info/", "")
 
 # # split image name to extract site, camera, date info
 image_parts = pred_df.file_path.str.rsplit("/", n=4, expand=True)
@@ -294,7 +294,7 @@ preds['comments'] = ""
 
 # save with new formatted name
 # preds.to_csv(IMAGE_PATH + "_" + model_type + '_results_formatted.csv', index=False)
-preds.to_csv(IMAGE_PATH + "/TableMtn_" + model_type + '_results_formatted.csv',
+preds.to_csv(IMAGE_PATH + "/ProjectName_" + model_type + '_results_formatted.csv',
              index=False)
 
 # TODO: write predictions to image metadata
