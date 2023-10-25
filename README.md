@@ -28,7 +28,7 @@ conda env create -n ctd-deploy-model -f deploy_model_env.yml
 ```
 or you can manually create a Python environment and install the listed packages using the package manager of your choosing.    
 
-This step may take a while! Go get a cup of coffee or a yummy snack, and start [downloading the models] while you wait.  
+This step may take a while! Go get a cup of coffee or a yummy snack, and start [downloading the models](https://github.com/CameraTrapDetectoR/model_training/blob/main/README.md#4-download-models) while you wait.  
 
 ### 4. Download Models
 
