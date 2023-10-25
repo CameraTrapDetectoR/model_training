@@ -13,7 +13,6 @@ import os
 import warnings
 import torch
 from PIL import ImageFile
-from PIL.ExifTags import TAGS
 import numpy as np
 import pandas as pd
 import cv2

@@ -9,7 +9,6 @@ dependencies:
   - python>=3.9
   - Pillow=9.4.0
   - numpy
-  - matplotlib
   - pandas
   - scikit-learn
   - opencv
@@ -19,6 +18,8 @@ dependencies:
   # model packages
   - pytorch::pytorch=1.12
   - pytorch::torchvision=0.13
-  - conda-forge::cudatoolkit=11.3 # latest version on Ceres
-  - conda-forge::cudnn=8.2  # latest version on Ceres
+  - conda-forge::cudatoolkit=11.3
+  # latest version on Ceres
+  - conda-forge::cudnn=8.2
+  # latest version on Ceres
 
