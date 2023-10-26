@@ -40,7 +40,7 @@ set PYTHONPATH=%PYTHONPATH%;\path\to\project\dir\model_training
 ```
 For Mac/Linux:    
 ```batch
-source activate ctd-deploy-model
+conda activate ctd-deploy-model
 export PYTHONPATH="$PYTHONPATH:$path/to/project/dir/model_training
 ```    
 
@@ -58,4 +58,27 @@ Now you are ready to run the CameraTrapDetectoR models!
 
 ## Use
 
+
+### 1. Activate Python Environment   
+
+Activate your Python environment and, if necessary, export the path to the model_training repo to your Python path:    
+For Windows:    
+```batch
+conda activate ctd-deploy-model
+set PYTHONPATH=%PYTHONPATH%;\path\to\project\dir\model_training
+```
+For Mac/Linux:    
+```batch
+conda activate ctd-deploy-model
+export PYTHONPATH="$PYTHONPATH:$path/to/project/dir/model_training
+```
+
+### 2. The deploy_model.py script
+
+Inside the main folder of the model_training repo, you will see a file titled *deploy_model.py*; you will pass your user arguments to this script through the command line. This script provides a similar output to the `deploy_model` function in the CameraTrapDetectoR package. Navigate into the repo and run the help command to view descriptions of the inputs:    
+```batch
+cd /path/to/project/dir/model_training
+python deploy_model.py --help
+```
+![image](https://github.com/CameraTrapDetectoR/model_training/assets/54477812/11b59ab7-661e-4448-92f2-53dfd857d622)
 
