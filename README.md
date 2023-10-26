@@ -86,4 +86,8 @@ The required arguments are both absolute paths:
 * **model_folder**: the absolute path to the folder containing all model files that was [downloaded](https://github.com/CameraTrapDetectoR/model_training/main/README.md#4-download-models) earlier. If you put the model folders in the same directory as the model_training repo, then an example path to the species_v2 model folder would read: ```path/to/project/dir/species_v2_cl_0```
 * **image_dir**: the absolute path to the parent directory containing your images. The model script scans recursively through this directory, so if you want to restrict a model run to a specific folder, you will need to specify that folder. Currently, only .jpg files are accepted. If you require additional file types to run through the model, please [let us know](https://github.com/CameraTrapDetectoR/model_training/issues)
     
-The optional arguments give the user some control over results placement, checkpointing, etc. and are detailed in the help 
+The optional arguments give the user some control over results placement, checkpointing, etc. and are detailed in the help. Here is a sample command to deploy the species version 2 model on images from Project A, saving the results to a separate results directory, with a score threshold of 0.5, an overlap threshold of 0.8, a checkpoint frequency of 100, and resuming from a previous checkpoint:    
+```
+python deploy_model.py /path/to/model_folder/species_v2 /path/to/images/ProjectA --output_dir /path/to/results/ProjectA --score_threshold 0.5 --overlap_threshold 0.8 --checkpoint_frequency 100 --resume_from_checkpoint /path/to/results/ProjectA/species_v2_checkpoint_20231010082035.csv
+```
+   
