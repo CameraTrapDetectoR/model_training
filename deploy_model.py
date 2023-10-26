@@ -358,7 +358,7 @@ def main():
         else:
             chkpt_pth = IMAGE_DIR + "/" + model_version + "_checkpoint_" + datetime.utcnow().strftime(
                 "%Y%m%d%H%M%S") + ".csv"
-        print('New and existing results will be checkpointed in the filepath: {}'.format(chkpt_pth))
+        print('New and existing results will be checkpointed in the filepath: {}'.format(Path(chkpt_pth)))
 
     # create prediction plot folder
     # if args.plot_images:
@@ -444,7 +444,7 @@ def main():
     else:
         raw_results = IMAGE_DIR + '/' + model_version + "_results_raw.csv"
     pred_df.to_csv(raw_results, index=False)
-    print("Raw results with proportional bounding boxes can be found in the path {}".format(raw_results))
+    print("Raw results with proportional bounding boxes can be found in the path {}".format(Path(raw_results)))
 
     ## -- Format Results
 
@@ -462,7 +462,7 @@ def main():
     os.remove(Path(chkpt_pth))
 
     # Final update
-    print("Model run complete! Formatted results can be found in the path {}".format(format_results) + \
+    print("Model run complete! Formatted results can be found in the path {}".format(Path(format_results)) + \
           " Checkpoint files have been removed.")
 
     ## END
