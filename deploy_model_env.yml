@@ -16,8 +16,8 @@ dependencies:
   - albumentations
 
   # model packages
-  - pytorch::pytorch=1.12
-  - pytorch::torchvision=0.13
+  - pytorch::pytorch>=1.12
+  - pytorch::torchvision>=0.13
   - conda-forge::cudatoolkit=11.3
   # latest version on Ceres
   - conda-forge::cudnn=8.2
