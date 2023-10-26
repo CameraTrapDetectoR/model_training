@@ -83,5 +83,6 @@ python deploy_model.py --help
 ![image](https://github.com/CameraTrapDetectoR/model_training/assets/54477812/11b59ab7-661e-4448-92f2-53dfd857d622)
 
 The required arguments are both absolute paths:    
-* **model_folder**: the absolute path to the folder containing all model files that was [downloaded](https://github.com/CameraTrapDetectoR/model_training/main/README.md#4-download-models) earlier. If you put the model folders in the same directory as the model_training repo, then an example path to the species_v2 model folder would look like this: ```path/to/project/dir/species_v2_cl_0```
-*  **image_dir**: the absolute path to the parent directory containing your images. The model script automatically scans recursively through this directory
+* **model_folder**: the absolute path to the folder containing all model files that was [downloaded](https://github.com/CameraTrapDetectoR/model_training/main/README.md#4-download-models) earlier. If you put the model folders in the same directory as the model_training repo, then an example path to the species_v2 model folder would read: ```path/to/project/dir/species_v2_cl_0```
+* **image_dir**: the absolute path to the parent directory containing your images. The model script scans recursively through this directory, so if you want to restrict a model run to a specific folder, you will need to specify that folder. Currently, only .jpg files are accepted. If you require additional file types to run through the model, please [let us know](https://github.com/CameraTrapDetectoR/model_training/issues)    
+The optional arguments give the user some control over results placement, checkpointing, etc. and are detailed in the help 
