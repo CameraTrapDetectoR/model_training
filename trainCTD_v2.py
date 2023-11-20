@@ -1,5 +1,5 @@
 """
-Script  to train updated CameraTrapDetectoR model
+Script  to train CameraTrapDetectoR model version 2
 """
 
 # Imports

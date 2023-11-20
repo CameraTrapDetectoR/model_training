@@ -28,7 +28,9 @@ class DetectDataset(Dataset):
     def __init__(self, df, image_dir, w, h, label2target, transform):
         self.image_dir = image_dir
         self.df = df
-        self.image_infos = df.filename.unique()
+        # allow for duplicates in v3
+        #self.image_infos = df.filename.unique()
+        self.image_infos = df['filename']
         self.w = w
         self.h = h
         self.label2target = label2target
@@ -52,7 +54,8 @@ class DetectDataset(Dataset):
         # extract label names
         labels = data['LabelName'].values.tolist()
         # extract bbox coordinates
-        data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
+        # data = data[['XMin', 'YMin', 'XMax', 'YMax']].values
+        data = data[['xmin', 'ymin', 'xmax', 'ymax']].values
         # convert to absolute values for model input
         data[:, [0, 2]] *= self.w
         data[:, [1, 3]] *= self.h

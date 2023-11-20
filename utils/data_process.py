@@ -40,15 +40,15 @@ def existing_images(df, IMAGE_ROOT):
     # cross check filenames to image files in directory
     # for local jobs, need to be connected to VPN here
     extant = [os.path.join(dp, f).replace(os.sep, '/') for dp, dn, fn in os.walk(IMAGE_ROOT) for f in fn]
-    extant = [x.replace(IMAGE_ROOT + '/', '/').strip('/') for x in extant]
+    extant = [x.replace(IMAGE_ROOT, "") for x in extant]
 
     # filter df for existing images
     df = df[df['filename'].isin(extant)]
 
     # exclude partial images
-    df = df[df['partial.image'] == False]
+    df1 = df[df['partial.image'] == False]
 
-    return df
+    return df1
 
 # orient bboxes
 def orient_boxes(df):
@@ -92,6 +92,77 @@ def filter_partials(df):
     return df
 
 
+def combo_subspecies(df):
+    """
+    concat various species into subspecies categories
+    :param df: df to format
+    :return: formatted df
+    """
+    # combine squirrel species into one group
+    squirrels = ['Callospermophilus_lateralis', 'Glaucomys_sabrinus', 'Neosciurus_carolinensis',
+                 'Otospermophilus_variegatus', 'Sciurus_aberti', 'Sciurus_griseus', 'Sciurus_carolinensis',
+                 'Sciurus_niger', 'Tamiasciurus_douglasii', 'Tamiasciurus-hudsonicus']
+    df.loc[df['species'].isin(squirrels), 'species'] = 'Sciurus_spp'
+
+    # combine pigeons into one group
+    df.loc[df['species'].str.contains('Patagioenas', na=False), 'species'] = 'Patagioenas_spp'
+
+    # combine doves into one group
+    doves = ['Columba_livia', 'Columbina_passerina', 'Leptotila verreauxi',
+             'Streptopelia_decaocto', 'Zenaida', 'Zenaida_asiatica', 'Zenaida_macroura']
+    df.loc[df['species'].isin(doves), 'species'] = 'dove_spp'
+
+    # combine blackbirds
+    blackbirds = ['Agelaius_phoeniceus', 'Euphagus_cyanocephalus', 'Xanthocephalus_xanthocephalus']
+    df.loc[df['species'].isin(blackbirds), 'species'] = 'blackbird_spp'
+
+    # combine chipmunks
+    df.loc[df['species'].str.contains('Tamias', na=False), 'species'] = 'Tamias_spp'
+
+    # combine cottontail rabbits
+    df.loc[df['species'].str.contains('Sylvilagus', na=False), 'species'] = 'Sylvilagus_spp'
+
+    # combine cowbirds
+    df.loc[df['species'].str.contains('Molothrus', na=False), 'species'] = 'Molothrus_spp'
+
+    # combine egrets
+    egrets = ['Ardea_alba', 'Bubulcus_ibis']
+    df.loc[df['species'].isin(egrets), 'species'] = 'egret_spp'
+
+    # combine grackles
+    df.loc[df['species'].str.contains('Quiscalus', na=False), 'species'] = 'Quiscalus_spp'
+
+    # combine jackrabbits
+    jackrabbits = ['Lepus_californicus', 'Lepus_townsendii']
+    df.loc[df['species'].isin(jackrabbits), 'species'] = 'jackrabbit_spp'
+
+    # combine herons
+    herons = ['Ardea_herodias', 'Butorides_virescens', 'Egretta_tricolor']
+    df.loc[df['species'].isin(herons), 'species'] = 'heron_spp'
+    night_herons = ['Nyctanassa_violacea', 'Nycticorax_nycticorax']
+    df.loc[df['species'].isin(night_herons), 'species'] = 'night_heron_spp'
+
+    # combine owls
+    owls = ['Asio_flammeus', 'Athene_cunicularia', 'Bubo_virginianus', 'Strix_varia',
+            'Tyto_alba']
+    df.loc[df['species'].isin(owls), 'species'] = 'owl_spp'
+
+    # combine prairie dogs
+    df.loc[df['species'].str.contains('Cynomys', na=False), 'species'] = 'Cynomys_spp'
+
+    # combine quails
+    quails = ['Callipepla_californica', 'Colinus_virginianus', 'Oreortyx_pictus']
+    df.loc[df['species'].isin(quails), 'species'] = 'quail_spp'
+
+    # combine red foxes
+    df.loc[df['species'].str.contains('Vulpes_vulpes', na=False), 'species'] = 'Vulpes_vulpes'
+
+    # standardize unsorted birds
+    df.loc[df['species'].str.contains('Aves', na=False), 'species'] = 'Aves_spp'
+
+    return df
+
+
 
 # format variables
 def format_vars(df):
@@ -110,16 +181,17 @@ def format_vars(df):
     squirrels = ['Callospermophilus_lateralis', 'Glaucomys_sabrinus', 'Neosciurus_carolinensis',
                  'Otospermophilus_variegatus', 'Sciurus_aberti', 'Sciurus_griseus', 
                  'Sciurus_niger', 'Tamiasciurus_douglasii', 'Tamiasciurus-hudsonicus']
-    df.loc[df['species'].isin(squirrels), 'species', 'common.name'] = 'squirrel_spp'
+    df.loc[df['species'].isin(squirrels), 'species'] = 'Sciurus_spp'
 
     # combine pigeons into one group
     # pigeons = ['Patagioenas_fasciata', 'Patagioenas_leucocephala']
     df.loc[df['species'].str.contains('Patagioenas', na=False), 'species'] = 'Patagioenas_spp'
+    df.loc[df['species'].str.contains('Patagioenas', na=False), 'common.name'] = 'pigeon_spp'
 
     # combine doves into one group
     doves = ['Columba_livia', 'Columbina_passerina', 'Leptotila verreauxi', 
              'Streptopelia_decaocto', 'Zenaida', 'Zenaida_asiatica', 'Zenaida_macroura']
-    df.loc[df['species'].isin(doves), 'species', 'common.name'] = 'dove_spp'
+    df.loc[df['species'].isin(doves), 'species'] = 'dove_spp'
 
     # combine blackbirds
     blackbirds = ['Agelaius_phoeniceus', 'Euphagus_cyanocephalus', 'Xanthocephalus_xanthocephalus']
@@ -135,7 +207,6 @@ def format_vars(df):
     df.loc[df['species'].str.contains('Sylvilagus', na=False), 'species'] = 'Sylvilagus_spp'
 
     # combine cowbirds
-    # cowbirds = ['Molothrus_aeneus', 'Molothrus_ater']
     df.loc[df['species'].str.contains('Molothrus', na=False), 'species'] = 'Molothrus_spp'
 
     # combine egrets
@@ -147,7 +218,6 @@ def format_vars(df):
 
     # combine jackrabbits
     jackrabbits = ['Lepus_californicus', 'Lepus_townsendii']
-    #TODO confirm naming
     df.loc[df['species'].isin(jackrabbits), 'species'] = 'jackrabbit_spp'
 
     # combine herons
@@ -226,7 +296,7 @@ def taxo_dict(df):
     :return: model class taxonomic dictionary
     """
     taxos = df[['common.name.general', 'common.name.type', 'species',
-                'genus', 'family', 'order', 'class']
+                'genus', 'family', 'order', 'class']]
     taxo_df = taxos.drop_duplicates()
 
     return taxo_df
