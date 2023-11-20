@@ -7,13 +7,9 @@ Code Authors: Amira Burns
 # Imports
 import os
 import torch
-from utils.data_process import class_range, existing_images, \
-    combo_subspecies, format_vars, split_df
-from utils import dicts
 import pandas as pd
-from collections import Counter
 
-from utils.data_setload import DetectDataset, get_class_weights
+from utils.data_setload import DetectDataset
 from torch.utils.data import DataLoader
 
 from utils.hyperparameters import get_anchors, get_transforms
