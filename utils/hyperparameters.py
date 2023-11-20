@@ -38,12 +38,12 @@ def get_transforms(transforms, w, h):
     """
 
     if transforms == 'shear, rotate, huesat, brightcont, safecrop, hflip':
-        train_transform = A.Compose([A.Affine(shear=(-30, 30), fit_output=True, p=0.3),
-                                     A.Affine(rotate=(-30, 30), fit_output=True, p=0.3),
-                                     A.HueSaturationValue(p=0.4),
-                                     A.RandomBrightnessContrast(p=0.4),
-                                     A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.4),
-                                     A.HorizontalFlip(p=0.4),
+        train_transform = A.Compose([A.Affine(shear=(-30, 30), fit_output=True, p=0.6),
+                                     A.Affine(rotate=(-30, 30), fit_output=True, p=0.6),
+                                     A.HueSaturationValue(p=0.5),
+                                     A.RandomBrightnessContrast(p=0.5),
+                                     A.RandomSizedBBoxSafeCrop(height=h, width=w, erosion_rate=0.2, p=0.5),
+                                     A.HorizontalFlip(p=0.5),
                                      ToTensorV2()],
                                     bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels']), )
         val_transform = A.Compose([ToTensorV2()],

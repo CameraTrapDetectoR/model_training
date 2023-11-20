@@ -137,16 +137,20 @@ def spec_dict(df, max_per_class, min_per_class):
     too_few = list({k for (k, v) in Counter(df['species']).items() if v < min_per_class})
 
     # remove general bird images
-    too_few.append('Bird')
+    # too_few.append('Bird')
+    too_few.append('Aves_spp')
+    too_few.append('Aves')
 
     # include these species despite small sample sizes
-    always_include = ['White-nosed_Coati', 'Collared_Peccary', 'Jaguarundi', 'Margay', 'Jaguar', 'Ocelot']
+    # always_include = ['White-nosed_Coati', 'Collared_Peccary', 'Jaguarundi', 'Margay', 'Jaguar', 'Ocelot']
+    always_include = ["Dicotyles_tajacu", "Panthera_onca", "Herpailurus_yagouaroundi",
+                      "Leopardus_wiedii", "Leopardus_pardalis", "Nasua_narica"]
     # always include images from CFT databases
-    cft_include = ['Cattle Fever Tick Program', 'Texas A&M']
+    # cft_include = ['Cattle Fever Tick Program', 'Texas A&M']
 
     # filter always_include species out of the too_few list
     too_few = [e for e in too_few if e not in always_include]
-    df = df[~df['common.name'].isin(too_few)]
+    df = df[~df['species'].isin(too_few)]
 
     # save original df to filter through later
     original_df = df

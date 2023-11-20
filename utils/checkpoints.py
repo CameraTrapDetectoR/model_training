@@ -6,9 +6,10 @@ import torch
 
 
 # write model arguments to text file
-def write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size, optim, lr, wd, lr_scheduler, output_path):
+def write_args(model_type, cnn_backbone, w, h, transforms, anchor_sizes, batch_size, optim, lr, wd, lr_scheduler, output_path):
     """
     write txt file to output dir that has run values for changeable hyperparameters:
+    - model type
     - model backbone
     - image size
     - data augmentations and their ranges
@@ -21,7 +22,8 @@ def write_args(cnn_backbone, w, h, transforms, anchor_sizes, batch_size, optim, 
     """
 
     # collect arguments in a dict
-    model_args = {'backbone': cnn_backbone,
+    model_args = {'model_type': model_type,
+                  'backbone': cnn_backbone,
                   'image width': w,
                   'image height': h,
                   'data augmentations': transforms,
