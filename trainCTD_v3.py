@@ -52,7 +52,7 @@ model_type = 'species'
 # load annotations - samples created in the R script `create_training_sample_v3`
 train_df = pd.read_csv("./labels/v3_species_train_df.csv")
 val_df = pd.read_csv("./labels/v3_species_val_df.csv")
-test_df = pd.csv("./labels/v3_species_test_df.csv")
+test_df = pd.read_csv("./labels/v3_species_test_df.csv")
 
 # create LabelName column based on model_type
 train_df['LabelName'] = train_df[model_type]
@@ -60,7 +60,7 @@ val_df['LabelName'] = val_df[model_type]
 test_df['LabelName'] = test_df[model_type]
 
 # create dictionary of species labels
-label2target = {l: t + 1 for t, l in enumerate(train_df['species'].unique())}
+label2target = {l: t + 1 for t, l in enumerate(sorted(train_df['species'].unique()))}
 # set background class
 label2target['empty'] = 0
 # reverse dictionary to read into pytorch
@@ -265,7 +265,7 @@ for epoch in range(epoch, num_epochs):
 
     ## -- Run evaluation on test set every 10 epochs
 
-    if (epoch + 1) %% 10 == 0:
+    if (epoch + 1) % 10 == 0:
         # define test image list
         test_infos = test_df.filename.unique()
 
