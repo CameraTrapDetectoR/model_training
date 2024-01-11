@@ -7,13 +7,11 @@ Code Authors: Amira Burns
 # Imports
 import os
 import torch
-from utils.data_process import class_range, existing_images, \
-    combo_subspecies, format_vars, split_df
-from utils import dicts
 import pandas as pd
-from collections import Counter
+import numpy as np
+import cv2
 
-from utils.data_setload import DetectDataset, get_class_weights
+from utils.data_setload import DetectDataset
 from torch.utils.data import DataLoader
 
 from utils.hyperparameters import get_anchors, get_transforms
@@ -41,8 +39,8 @@ from utils.checkpoints import write_args, \
 
 
 # Set paths
-IMAGE_ROOT = 'path/to/!VarifiedPhotos'
-os.chdir("path/to/Projects/CameraTrapDetectoR")
+IMAGE_ROOT = '/path/to/Training/Images'
+os.chdir("/path/to/script/dir")
 
 
 # set device
@@ -51,101 +49,193 @@ print(device)
 
 
 # Set model type: options = 'general', 'family', 'species', 'pig_only'
-model_type = 'species'
+model_type = 'pig_only'
 
 # load annotations - samples created in the R script `create_training_sample_v3`
 train_df = pd.read_csv("./labels/v3_species_train_df.csv")
 val_df = pd.read_csv("./labels/v3_species_val_df.csv")
-test_df = pd.csv("./labels/v3_species_test_df.csv")
+test_df = pd.read_csv("./labels/v3_species_test_df.csv")
 
 # create LabelName column based on model_type
 train_df['LabelName'] = train_df[model_type]
 val_df['LabelName'] = val_df[model_type]
 test_df['LabelName'] = test_df[model_type]
 
-# create dictionary of species labels
-label2target = {l: t + 1 for t, l in enumerate(train_df['species'].unique())}
-# set background class
-label2target['empty'] = 0
-# reverse dictionary to read into pytorch
-target2label = {t: l for l, t in label2target.items()}
-# define number of classes
-num_classes = max(label2target.values()) + 1
 
-# set image dimensions for training
-# TODO: determine ideal training w and h
-w = 408
-h = 307
+# determine if resuming training
+resume = True
 
-# define data augmentation pipelines
-# note augmentations as a string to save in model arguments
-transforms = 'shear, rotate, huesat, brightcont, safecrop, hflip'
+# model setup if resuming training
+if resume:
+    # specify output path
+    output_path = "./output/v3/" + model_type + "_path_to_model_folder/"
 
-train_transform, val_transform = get_transforms(transforms, w, h)
+    # determine latest epoch checkpoint
+    chkpt_epoch = 9
 
-# Load PyTorch Datasets
-train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
-                         label2target=label2target, transform=train_transform)
-val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,
-                       label2target=label2target, transform=val_transform)
+    # open model arguments file
+    with open(output_path + 'model_args.txt') as f:
+        model_args = {k: v for line in f for (k, v) in [line.strip().split(":")]}
 
-# define anchor boxes based on image size
-anchor_sizes, anchor_gen = get_anchors(h=h)
+    # load model checkpoint
+    checkpoint_path = output_path + "checkpoint_" + str(chkpt_epoch) + "epochs.pth"
+    checkpoint = torch.load(checkpoint_path, map_location=device)
 
-# define model backbone
-cnn_backbone = 'resnet'
+    # define label dictionaries
+    label2target = checkpoint['label2target']
+    target2label = {t: l for l, t in label2target.items()}
 
-# initialize model
-model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen).to(device)
-params = [p for p in model.parameters() if p.requires_grad]
+    # define image dimensions
+    w = int(model_args['image width'])
+    h = int(model_args['image height'])
 
-# define number of training epochs
-num_epochs = 50
+    # define data augmentation pipelines
+    transforms = model_args['data augmentations']
+    train_transform, val_transform = get_transforms(transforms=transforms, w=w, h=h)
 
-# define batch size
-batch_size = 32
-batch_size_org = batch_size
+    # Load PyTorch Datasets
+    train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                             label2target=label2target, transform=train_transform)
+    val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                           label2target=label2target, transform=val_transform)
 
-# boolean to use gradient accumulation
-use_grad = True
+    # define anchor generator
+    anchor_sizes, anchor_gen = get_anchors(h=h)
+    assert anchor_sizes == tuple(eval(model_args['anchor box sizes'])), "Anchor box sizes not consistent."
 
-# set denominator if using gradient accumulation
-if use_grad:
-    # set number of gradients to accumulate before updating weights
-    grad_accumulation = 8
-    # effective batch size = batch_size * grad_accumulation
-    batch_size = batch_size_org // grad_accumulation
+    # initiate model
+    cnn_backbone = model_args['backbone']
+    num_classes = checkpoint['num_classes']
+    model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen)
 
-# define dataloaders
-train_loader = DataLoader(train_ds, batch_size=batch_size,
-                          collate_fn=train_ds.collate_fn,
-                          drop_last=True)
-val_loader = DataLoader(val_ds, batch_size=batch_size,
-                        collate_fn=train_ds.collate_fn, drop_last=True)
+    # load current model weights from checkpoint
+    model.load_state_dict(checkpoint['state_dict'])
+    model.to(device)
+    params = [p for p in model.parameters() if p.requires_grad]
 
-# define starting lr, wd, momentum
-# TODO: review training results to confirm these
-lr = 0.01
-wd = 0.001
-momentum = 0.9
+    # define total epochs
+    num_epochs = 50
+    assert num_epochs > checkpoint['epoch'], "Model already trained for total epochs requested."
 
-# load optimizer
-# TODO: create function to choose this based on optim
-optim = 'SGD'
-optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
+    # load batch size
+    batch_size = int(model_args['batch size'])
+    batch_size_org = batch_size
 
-# set learning rate scheduler
-lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+    # boolean to use gradient accumulation
+    use_grad = True
 
-# make output directory and filepath
-output_path = "./output/v3/" + model_type + "_fasterRCNN_" + cnn_backbone + "_" + \
-              time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
-if not os.path.exists(output_path):
-    os.makedirs(output_path)
+    # set denominator if using gradient accumulation
+    if use_grad:
+        # set number of gradients to accumulate before updating weights
+        grad_accumulation = 8
+        # effective batch size = batch_size * grad_accumulation
+        batch_size = batch_size_org // grad_accumulation
 
-# write model args to text file
-write_args(model_type, cnn_backbone, w, h, transforms, anchor_sizes,
-           batch_size_org, optim, lr, wd, lr_scheduler, output_path)
+    # define dataloaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size,
+                              collate_fn=train_ds.collate_fn,
+                              drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size,
+                            collate_fn=train_ds.collate_fn, drop_last=True)
+
+    # load hyperparameters
+    lr = checkpoint['current_lr']
+    wd = float(model_args['weight decay'])
+    momentum = 0.9
+
+    # load optimizer
+    optim = 'SGD'
+    optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
+    optimizer.load_state_dict(checkpoint['optimizer'])
+
+    # load lr scheduler
+    lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+
+# setup new training
+else:
+    # create label dictionary
+    label2target = {l: t + 1 for t, l in enumerate(sorted(train_df[model_type].unique()))}
+    # set background class
+    label2target['empty'] = 0
+    # reverse dictionary to read into pytorch
+    target2label = {t: l for l, t in label2target.items()}
+    # define number of classes
+    num_classes = max(label2target.values()) + 1
+
+    # set image dimensions for training
+    # TODO: determine ideal training w and h
+    w = 408
+    h = 307
+
+    # define data augmentation pipelines
+    # note augmentations as a string to save in model arguments
+    transforms = 'shear, rotate, huesat, brightcont, safecrop, hflip'
+
+    train_transform, val_transform = get_transforms(transforms, w, h)
+
+    # Load PyTorch Datasets
+    train_ds = DetectDataset(df=train_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                             label2target=label2target, transform=train_transform)
+    val_ds = DetectDataset(df=val_df, image_dir=IMAGE_ROOT, w=w, h=h,
+                           label2target=label2target, transform=val_transform)
+
+    # define anchor boxes based on image size
+    anchor_sizes, anchor_gen = get_anchors(h=h)
+
+    # define model backbone
+    cnn_backbone = 'resnet'
+
+    # initialize model
+    model = load_fasterrcnn(cnn_backbone, num_classes, anchor_gen).to(device)
+    params = [p for p in model.parameters() if p.requires_grad]
+
+    # define number of training epochs
+    num_epochs = 50
+
+    # define batch size
+    batch_size = 16
+    batch_size_org = batch_size
+
+    # boolean to use gradient accumulation
+    use_grad = True
+
+    # set denominator if using gradient accumulation
+    if use_grad:
+        # set number of gradients to accumulate before updating weights
+        grad_accumulation = 8
+        # effective batch size = batch_size * grad_accumulation
+        batch_size = batch_size_org // grad_accumulation
+
+    # define dataloaders
+    train_loader = DataLoader(train_ds, batch_size=batch_size,
+                              collate_fn=train_ds.collate_fn,
+                              drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size,
+                            collate_fn=train_ds.collate_fn, drop_last=True)
+
+    # define starting lr, wd, momentum
+    # TODO: review training results to confirm these
+    lr = 0.01
+    wd = 0.001
+    momentum = 0.9
+
+    # load optimizer
+    # TODO: create function to choose this based on optim
+    optim = 'SGD'
+    optimizer = SGD(params=params, lr=lr, weight_decay=wd, momentum=momentum)
+
+    # set learning rate scheduler
+    lr_scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, patience=2, factor=0.5)
+
+    # make output directory and filepath
+    output_path = "./output/v3/" + model_type + "_fasterRCNN_" + cnn_backbone + "_" + \
+                  time.strftime("%Y%m%d") + "_" + time.strftime("%H%M") + "/"
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    # write model args to text file
+    write_args(model_type, cnn_backbone, w, h, transforms, anchor_sizes,
+               batch_size_org, optim, lr, wd, lr_scheduler, output_path)
 
 #######
 ## -- Train the Model
@@ -156,20 +246,32 @@ write_args(model_type, cnn_backbone, w, h, transforms, anchor_sizes,
 # TODO: incorporate function for loading existing model weights when training iteratively
 best_model_wts = copy.deepcopy(model.state_dict())
 
-# define starting loss
-best_loss = float('inf')
+if resume:
+    # load existing losses
+    best_loss = checkpoint['best_loss']
+    loss_history = checkpoint['loss_history']
 
-# create empty list to save train/val losses
-loss_history = {
-    'train': [],
-    'val': []
-}
+    # load training time
+    training_time = checkpoint['training_time']
 
-# create empty list to save training time per epoch
-training_time = []
+    # load current epoch
+    epoch = checkpoint['epoch']
 
-# define starting epoch
-epoch = range(num_epochs)[0]
+else:
+    # define starting loss
+    best_loss = float('inf')
+
+    # create empty list to save train/val losses
+    loss_history = {
+        'train': [],
+        'val': []
+    }
+
+    # create empty list to save training time per epoch
+    training_time = []
+
+    # define starting epoch
+    epoch = range(num_epochs)[0]
 
 # training/validation loop
 for epoch in range(epoch, num_epochs):
@@ -267,36 +369,52 @@ for epoch in range(epoch, num_epochs):
     # record validation loss
     loss_history['val'].append(epoch_val_loss)
 
-    ## -- Run evaluation on test set every 10 epochs
+    ## -- EVALUATION PASS (run every xx epochs)
 
-    if (epoch + 1) %% 10 == 0:
+    # create target df
+    target_df = pd.DataFrame({
+        'filename': test_df['filename'],
+        'class_name': test_df['LabelName'],
+        'bbox': np.array(test_df[['xmin', 'ymin', 'xmin', 'ymax']].to_numpy()).tolist()
+    }).drop_duplicates()
+
+    # create placeholders for preds and results
+    pred_df = []
+    results_df = []
+
+    # run eval every 25 epochs (can change this)
+    if (epoch + 1) % 25 == 0:
         # define test image list
         test_infos = test_df.filename.unique()
 
         with torch.no_grad():
             # create placeholders for targets and predictions
-            pred_df = []
-            target_df = []
+            pred_df = pd.DataFrame(columns=['filename', 'class_name', 'confidence', 'bbox'])
 
             # deploy model on test images
             model.eval()
             for i in tqdm(range(len(test_infos))):
-                # define dataset and dataloader
-                dfi = test_df[test_df['filename'] == test_infos[i]]
-                dsi = DetectDataset(df=dfi, image_dir=IMAGE_ROOT, w=w, h=h, label2target=label2target,
-                                    transform=val_transform)
-                dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
-
-                # extract image, bbox, and label info
-                input, target = next(iter(dli))
-                tbs = dsi[0][1]['boxes']
-                image = list(image.to(device) for image in input)
+                # set image path
+                img_path = test_infos[i]
+                # open image
+                img_org = cv2.imread(IMAGE_ROOT + '/' + img_path)
+                # reformat color channels
+                img = cv2.cvtColor(img_org, cv2.COLOR_BGR2RGB)
+                # resize image so bboxes can also be converted
+                img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+                img = img.astype(np.float32) / 255.
+                # convert array to tensor
+                img = torch.from_numpy(img)
+                # shift channels to be compatible with model input
+                image = img.permute(2, 0, 1)
+                image = image.unsqueeze_(0)
+                # send input to CUDA if available
+                image = image.to(device)
 
                 # run input through the model
                 output = model(image)[0]
 
                 # extract prediction bboxes, labels, scores above score_thresh
-                # format prediction data
                 bbs = output['boxes'].cpu().detach()
                 labels = output['labels'].cpu().detach()
                 confs = output['scores'].cpu().detach()
@@ -336,19 +454,18 @@ for epoch in range(epoch, num_epochs):
                         'confidence': confs,
                         'bbox': bbs
                     })
-                tar_df_i = pd.DataFrame({
-                    'filename': test_infos[i],
-                    'class_name': dfi['LabelName'].tolist(),
-                    'bbox': tbs.tolist()
-                })
+
+                # update pred_df
                 pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
-                target_df = pd.concat([target_df, tar_df_i], ignore_index=True)
 
             # calculate eval metrics
             preds, targets = prepare_results(pred_df=pred_df, target_df=target_df,
                                              image_infos=test_infos, label2target=label2target)
 
             results_df = calculate_metrics(preds=preds, targets=targets, target2label=target2label)
+    else:
+        pred_df = "Eval not run this epoch"
+        results_df = "Eval not run this epoch"
 
     ## -- UPDATE MODEL
 
@@ -379,7 +496,4 @@ for epoch in range(epoch, num_epochs):
     save_checkpoint(checkpoint, checkpoint_file)
 
     print('Model trained for {} epochs'.format(epoch + 1))
-
-
-
 

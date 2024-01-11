@@ -12,7 +12,7 @@ Need to find a way to share the appropriate folder with model_args.txt and a mod
 import os
 import warnings
 import torch
-from PIL import ImageFile
+from PIL import ImageFile, Image
 import numpy as np
 import pandas as pd
 import cv2
