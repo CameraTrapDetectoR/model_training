@@ -8,7 +8,8 @@ Code Authors: Amira Burns
 import os
 import torch
 import pandas as pd
-from collections import Counter
+import numpy as np
+import cv2
 
 from utils.data_setload import DetectDataset
 from torch.utils.data import DataLoader
@@ -48,7 +49,7 @@ print(device)
 
 
 # Set model type: options = 'general', 'family', 'species', 'pig_only'
-model_type = 'species'
+model_type = 'pig_only'
 
 # load annotations - samples created in the R script `create_training_sample_v3`
 train_df = pd.read_csv("./labels/v3_species_train_df.csv")
@@ -368,94 +369,103 @@ for epoch in range(epoch, num_epochs):
     # record validation loss
     loss_history['val'].append(epoch_val_loss)
 
-    ## -- Run evaluation on test set every 10 epochs
+    ## -- EVALUATION PASS (run every xx epochs)
 
+    # create target df
+    target_df = pd.DataFrame({
+        'filename': test_df['filename'],
+        'class_name': test_df['LabelName'],
+        'bbox': np.array(test_df[['xmin', 'ymin', 'xmin', 'ymax']].to_numpy()).tolist()
+    }).drop_duplicates()
+
+    # create placeholders for preds and results
     pred_df = []
     results_df = []
 
-    # if (epoch + 1) % 10 == 0:
-    #     # define test image list
-    #     test_infos = test_df.filename.unique()
+    # run eval every 25 epochs (can change this)
+    if (epoch + 1) % 25 == 0:
+        # define test image list
+        test_infos = test_df.filename.unique()
 
-    #     with torch.no_grad():
-    #         # create placeholders for targets and predictions
-    #         pred_df = []
-    #         target_df = []
+        with torch.no_grad():
+            # create placeholders for targets and predictions
+            pred_df = pd.DataFrame(columns=['filename', 'class_name', 'confidence', 'bbox'])
 
-    #         # deploy model on test images
-    #         model.eval()
-    #         for i in tqdm(range(len(test_infos))):
-    #             # define dataset and dataloader
-    #             dfi = test_df[test_df['filename'] == test_infos[i]]
-    #             dsi = DetectDataset(df=dfi, image_dir=IMAGE_ROOT, w=w, h=h, label2target=label2target,
-    #                                 transform=val_transform)
-    #             dli = DataLoader(dsi, batch_size=1, collate_fn=dsi.collate_fn, drop_last=True)
+            # deploy model on test images
+            model.eval()
+            for i in tqdm(range(len(test_infos))):
+                # set image path
+                img_path = test_infos[i]
+                # open image
+                img_org = cv2.imread(IMAGE_ROOT + '/' + img_path)
+                # reformat color channels
+                img = cv2.cvtColor(img_org, cv2.COLOR_BGR2RGB)
+                # resize image so bboxes can also be converted
+                img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+                img = img.astype(np.float32) / 255.
+                # convert array to tensor
+                img = torch.from_numpy(img)
+                # shift channels to be compatible with model input
+                image = img.permute(2, 0, 1)
+                image = image.unsqueeze_(0)
+                # send input to CUDA if available
+                image = image.to(device)
 
-    #             # extract image, bbox, and label info
-    #             input, target = next(iter(dli))
-    #             tbs = dsi[0][1]['boxes']
-    #             image = list(image.to(device) for image in input)
+                # run input through the model
+                output = model(image)[0]
 
-    #             # run input through the model
-    #             output = model(image)[0]
+                # extract prediction bboxes, labels, scores above score_thresh
+                bbs = output['boxes'].cpu().detach()
+                labels = output['labels'].cpu().detach()
+                confs = output['scores'].cpu().detach()
 
-    #             # extract prediction bboxes, labels, scores above score_thresh
-    #             # format prediction data
-    #             bbs = output['boxes'].cpu().detach()
-    #             labels = output['labels'].cpu().detach()
-    #             confs = output['scores'].cpu().detach()
+                # id indicies of tensors to include in evaluation
+                idx = torch.where(confs > 0.01)
 
-    #             # id indicies of tensors to include in evaluation
-    #             idx = torch.where(confs > 0.01)
+                # filter to predictions that meet the threshold
+                bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
 
-    #             # filter to predictions that meet the threshold
-    #             bbs, labels, confs = [tensor[idx] for tensor in [bbs, labels, confs]]
+                # perform non-maximum suppression on remaining predictions
+                ixs = nms(bbs, confs, iou_threshold=0.5)
 
-    #             # perform non-maximum suppression on remaining predictions
-    #             ixs = nms(bbs, confs, iou_threshold=0.5)
+                bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
 
-    #             bbs, confs, labels = [tensor[ixs] for tensor in [bbs, confs, labels]]
+                # normalize bboxes
+                norms = torch.tensor([1 / w, 1 / h, 1 / w, 1 / h])
+                bbs *= norms
 
-    #             # normalize bboxes
-    #             norms = torch.tensor([1 / w, 1 / h, 1 / w, 1 / h])
-    #             bbs *= norms
+                # format predictions
+                bbs = bbs.tolist()
+                confs = confs.tolist()
+                labels = labels.tolist()
+                class_names = [target2label[a] for a in labels]
 
-    #             # format predictions
-    #             bbs = bbs.tolist()
-    #             confs = confs.tolist()
-    #             labels = labels.tolist()
-    #             class_names = [target2label[a] for a in labels]
+                if len(bbs) == 0:
+                    pred_df_i = pd.DataFrame({
+                        'filename': test_infos[i],
+                        'class_name': 'empty',
+                        'confidence': 1,
+                        'bbox': [[0, 0, 0, 0]]
+                    })
+                else:
+                    pred_df_i = pd.DataFrame({
+                        'filename': test_infos[i],
+                        'class_name': class_names,
+                        'confidence': confs,
+                        'bbox': bbs
+                    })
 
-    #             if len(bbs) == 0:
-    #                 pred_df_i = pd.DataFrame({
-    #                     'filename': test_infos[i],
-    #                     'class_name': 'empty',
-    #                     'confidence': 1,
-    #                     'bbox': [[0, 0, 0, 0]]
-    #                 })
-    #             else:
-    #                 pred_df_i = pd.DataFrame({
-    #                     'filename': test_infos[i],
-    #                     'class_name': class_names,
-    #                     'confidence': confs,
-    #                     'bbox': bbs
-    #                 })
-    #             tar_df_i = pd.DataFrame({
-    #                 'filename': test_infos[i],
-    #                 'class_name': dfi['LabelName'].tolist(),
-    #                 'bbox': tbs.tolist()
-    #             })
-    #             pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
-    #             target_df = pd.concat([target_df, tar_df_i], ignore_index=True)
+                # update pred_df
+                pred_df = pd.concat([pred_df, pred_df_i], ignore_index=True)
 
-    #         # calculate eval metrics
-    #         preds, targets = prepare_results(pred_df=pred_df, target_df=target_df,
-    #                                          image_infos=test_infos, label2target=label2target)
+            # calculate eval metrics
+            preds, targets = prepare_results(pred_df=pred_df, target_df=target_df,
+                                             image_infos=test_infos, label2target=label2target)
 
-    #         results_df = calculate_metrics(preds=preds, targets=targets, target2label=target2label)
-    # else:
-    #     pred_df = "Eval not run this epoch"
-    #     results_df = "Eval not run this epoch"
+            results_df = calculate_metrics(preds=preds, targets=targets, target2label=target2label)
+    else:
+        pred_df = "Eval not run this epoch"
+        results_df = "Eval not run this epoch"
 
     ## -- UPDATE MODEL
 
