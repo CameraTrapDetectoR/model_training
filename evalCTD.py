@@ -2,6 +2,7 @@
 Script to deploy CameraTrapDetectoR model on out of sample data
 """
 
+
 import os
 import torch
 from PIL import ImageFile
@@ -45,7 +46,7 @@ print(device)
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # set path to model run being deployed
-model_path = "./output/general_v2/"
+model_path = "./output/species_v2/"
 
 # open model arguments file
 with open(model_path + 'model_args.txt') as f:
@@ -129,7 +130,7 @@ if resume_from_checkpoint == True:
 count = 0
 with torch.no_grad():
     model.eval()
-    for i in tqdm(range(len(image_infos))):
+    for i in tqdm(range(count, len(image_infos))):
         try:
             # set image path
             img_path = image_infos[i]
@@ -221,7 +222,7 @@ with torch.no_grad():
 
 # save prediction and target dfs to csv
 # pred_df.to_csv(IMAGE_ROOT + "_" + model_type + '_results_raw.csv', index=False)
-pred_df.to_csv(IMAGE_PATH + '/TableMtn_' + model_type + '_results_raw.csv', index=False)
+pred_df.to_csv(IMAGE_PATH + '/ProjectName_' + model_type + '_results_raw.csv', index=False)
 
 # remove checkpoint file
 os.remove(chkpt_pth)
@@ -277,8 +278,7 @@ multi_cts = multi_preds.groupby(['file_path', 'prediction'])['prediction'].count
 multi_preds = multi_preds.merge(multi_cts, on=['file_path', 'prediction'], how='left', copy=False)
 #
 # # filter multi_preds to one prediction per image + class group - take highest confidence
-filtr_preds = multi_preds.groupby(['file_path', 'prediction']).apply(
-    lambda x: x[x['confidence'] == max(x['confidence'])])
+filtr_preds = multi_preds.groupby(['file_path', 'prediction']).apply(lambda x: x[x['confidence'] == max(x['confidence'])])
 
 # join filtered multi_preds to single_preds
 preds = pd.concat([single_preds, filtr_preds], ignore_index=True).sort_values(['file_path'])
