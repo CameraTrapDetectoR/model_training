@@ -47,9 +47,9 @@ export PYTHONPATH="$PYTHONPATH:$path/to/project/dir/model_training
 ### 4. Download Models
 
 Download the model architecture, model weights, and auxiliary information needed to run each desired model. Model versions 2 and later are supported by this script:    
-   - [General V2 Model](https://data.nal.usda.gov/system/files/general_v2_cl_1.zip)
-   - [Family V2 Model](https://data.nal.usda.gov/system/files/family_v2_cl_0.zip)
-   - [Species V2 Model](https://data.nal.usda.gov/system/files/species_v2_cl_0.zip)
+   - [General V2 Model](https://agdatacommons.nal.usda.gov/ndownloader/files/44576758)
+   - [Family V2 Model](https://agdatacommons.nal.usda.gov/ndownloader/files/44576743)
+   - [Species V2 Model](https://agdatacommons.nal.usda.gov/ndownloader/files/44576239)
 
 The [user tutorial] assumes you are putting the model folder in the same project directory as this repo; you can place it anywhere you like, just adjust accordingly. 
 Once you download the model folder to its final location, unzip it. **DO NOT** rename, modify, or delete anything inside this folder or your model will not run. Inside each folder are three files specific to running that model, titled *cameratrapdetector_metadata.cfg*, *model_args.txt*, and *model_checkpoint.pth*. Do not change anything! Just unzip it and leave it.    
