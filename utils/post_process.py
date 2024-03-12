@@ -87,10 +87,13 @@ def plot_image(image, bbs, confs, labels, img_path, PRED_PATH, IMAGE_PATH):
         xmax = int(bbs[box][2] * img_w)
         ymax = int(bbs[box][3] * img_h)
 
+        # round confidence score for labeling
+        cscore = round(confs[box], 3)
+
         # plot box
         cv2.rectangle(image, (xmin, ymin), (xmax, ymax), color=(0, 0, 255), thickness=2)
         # add class label
-        cv2.putText(image, str(labels[box]), (xmin + 20, ymin),
+        cv2.putText(image, str(labels[box]) + ", conf=" + str(cscore), (xmin + 20, ymin),
                     cv2.FONT_HERSHEY_PLAIN, 2, (0, 0, 255), 2, cv2.LINE_AA)
 
     # make new image name
