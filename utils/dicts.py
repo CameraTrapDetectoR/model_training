@@ -146,7 +146,7 @@ def spec_dict(df, max_per_class, min_per_class):
     always_include = ["Dicotyles_tajacu", "Panthera_onca", "Herpailurus_yagouaroundi",
                       "Leopardus_wiedii", "Leopardus_pardalis", "Nasua_narica"]
     # always include images from CFT databases
-    # cft_include = ['Cattle Fever Tick Program', 'Texas A&M']
+    cft_include = ['Cattle Fever Tick Program', 'Texas A&M']
 
     # filter always_include species out of the too_few list
     too_few = [e for e in too_few if e not in always_include]
@@ -307,7 +307,7 @@ def train_database(df):
     df = df.drop_duplicates(subset='filename', keep='first')
 
     # rename variables
-    df = df.rename(columns={'LabelName': 'Class', 'provider': 'Provider', 'site': 'Site', \
+    df = df.rename(columns={'LabelName': 'Class', 'provider': 'Provider', 'site': 'Site',
                             'database': 'Database', 'state': 'State', 'filename': 'Images'})
 
     # group df and count number of images by species, provider, database, state
