@@ -13,6 +13,7 @@ import os
 import warnings
 import torch
 from PIL import ImageFile, Image
+from PIL.ExifTags import TAGS
 import numpy as np
 import pandas as pd
 import cv2
@@ -53,9 +54,9 @@ def get_device():
 
     # print message
     if device.type == 'cuda':
-        print('Images will be run with GPU')
+        print('Images will be run on GPU')
     else:
-        print('Images will be run with CPU')
+        print('Images will be run on CPU')
 
     return device
 
@@ -197,10 +198,11 @@ def make_pred_df_i(img_path, class_names, confs, bbs):
 def main():
     ## -- Add model arguments
     parser = argparse.ArgumentParser(
-        description='Module to run CameraTrapDetectoR models on HPC via command line arguments.' + \
+        description='Module to run CameraTrapDetectoR models via command line arguments.' + \
                     'Two final results files will be provided. Raw results will contain one row for each detection with bounding box. ' + \
                     'Formatted results will include one row for each detected class per image with predicted count.' + \
-                    'For more detailed documentation, visit the Github repo: https://github.com/CameraTrapDetectoR/model_training'
+                    'You can optionally return plotted bounding boxes on your images.' + \
+                    'For more detailed documentation visit our Github repo: https://github.com/CameraTrapDetectoR/model_training'
     )
     parser.add_argument(
         'model_folder',
@@ -233,13 +235,13 @@ def main():
         help='Iteratively remove lower scoring boxes which have an IoU greater than the overlap threshold ' + \
              ' with another (higher scoring) box. Default is 0.50'
     )
-    ## PLOT IMAGES WORKING IN PYTHON INTERPRETER BUT NOT FROM COMMAND LINE.
-    # parser.add_argument(
-    #     '--plot_images',
-    #     action='store_true',
-    #     help='Plot image copies with bounding boxes and predicted classes drawn. A folder named after the model version ' + \
-    #          'and "prediction_plots" will be created inside your output_dir or image_dir if output_dir is null.'
-    # )
+    # PLOT IMAGES WORKING IN PYTHON INTERPRETER BUT NOT FROM COMMAND LINE.
+    parser.add_argument(
+        '--plot_images',
+        action='store_true',
+        help='Plot image copies with bounding boxes and predicted classes drawn. A folder named after the model version ' + \
+             'and "prediction_plots" will be created inside your output_dir/image_dir to hold these plots.'
+    )
     parser.add_argument(
         '--checkpoint_frequency',
         type=int,
@@ -278,7 +280,7 @@ def main():
     IMAGE_DIR = args.image_dir
 
     # confirm score_threshold is between [0, 1]
-    assert 0.0 < args.score_threshold <= 1.0, 'Confidence threshold must be between 0 and 1'
+    assert 0.0 < args.score_threshold <= 1.0, 'Confidence score threshold must be between 0 and 1'
     SCORE_THRESHOLD = args.score_threshold
 
     # confirm overlap_threshold is between [0, 1]
@@ -313,8 +315,7 @@ def main():
     checkpoint_path = MODEL_FOLDER + "/model_checkpoint.pth"
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
-    # load model type
-    model_type = checkpoint['model_type']
+    # load model version
     model_version = model_args['model_version']
 
     # load dictionaries
@@ -361,16 +362,16 @@ def main():
         print('New and existing results will be checkpointed in the filepath: {}'.format(chkpt_pth))
 
     # create prediction plot folder
-    # if args.plot_images:
-    #     if args.output_dir is not None:
-    #         PRED_PATH = OUTPUT_DIR + '/' + model_version + '_prediction_plots/'
-    #         if os.path.exists(PRED_PATH) == False:
-    #             os.mkdir(PRED_PATH)
-    #     else:
-    #         PRED_PATH = IMAGE_DIR + '/' + model_version + '_prediction_plots/'
-    #         if os.path.exists(PRED_PATH) == False:
-    #             os.mkdir(PRED_PATH)
-    #     print('Image copies with plotted predictions will be saved in real time in the filepath: {}'.format(PRED_PATH))
+    if args.plot_images:
+        if args.output_dir is not None:
+            PRED_PATH = OUTPUT_DIR + '/' + model_version + '_prediction_plots/'
+            if os.path.exists(PRED_PATH) == False:
+                os.mkdir(PRED_PATH)
+        else:
+            PRED_PATH = IMAGE_DIR + '/' + model_version + '_prediction_plots/'
+            if os.path.exists(PRED_PATH) == False:
+                os.mkdir(PRED_PATH)
+        print('Image copies with plotted predictions will be saved in real time in the filepath: {}'.format(PRED_PATH))
 
     ## -- LOAD IMAGE FILES
 
@@ -410,10 +411,9 @@ def main():
                 bbs, confs, class_names = format_output(output, target2label, w, h, SCORE_THRESHOLD, OVERLAP_THRESHOLD)
 
                 # plot image if argument selected
-                # if args.plot_images is not None:
-                #     if (len(bbs) > 0):
-                #         plot_image(image=img_org, bbs=bbs, confs=confs, labels=class_names,
-                #                    img_path=img_path, PRED_PATH=PRED_PATH, IMAGE_PATH=IMAGE_DIR)
+                if args.plot_images is not None:
+                    plot_image(image=img_org, bbs=bbs, confs=confs, labels=class_names,
+                               img_path=img_path, PRED_PATH=PRED_PATH, IMAGE_PATH=IMAGE_DIR)
 
                 pred_df_i = make_pred_df_i(img_path, class_names, confs, bbs)
 
@@ -459,11 +459,12 @@ def main():
     format_df.to_csv(format_results, index=False)
 
     # remove checkpoint
-    os.remove(Path(chkpt_pth))
+    if(os.path.isfile(chkpt_pth)):
+        os.remove(Path(chkpt_pth))
+        print("Checkpoint files have been removed.")
 
     # Final update
-    print("Model run complete! Formatted results can be found in the path {}".format(format_results) + \
-          " Checkpoint files have been removed.")
+    print("Model run complete! Formatted results can be found in the path {}".format(format_results))
 
     ## END
 
