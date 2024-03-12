@@ -459,7 +459,7 @@ def main():
     format_df.to_csv(format_results, index=False)
 
     # remove checkpoint
-    if(os.path.isfile(chkpt_pth)):
+    if(os.path.isfile(Path(chkpt_pth))):
         os.remove(Path(chkpt_pth))
         print("Checkpoint files have been removed.")
 
