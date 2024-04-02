@@ -175,7 +175,7 @@ def make_pred_df_i(img_path, class_names, confs, bbs):
         pred_df_i = pd.DataFrame({
             'filename': img_path,
             'file_id': img_path[:-4],
-            'class_name': 'empty',
+            'prediction': 'empty',
             'confidence': 1,
             'bbox': [[0, 0, 0, 0]]
         })
@@ -183,7 +183,7 @@ def make_pred_df_i(img_path, class_names, confs, bbs):
         pred_df_i = pd.DataFrame({
             'filename': img_path,
             'file_id': img_path[:-4],
-            'class_name': class_names,
+            'prediction': class_names,
             'confidence': confs,
             'bbox': bbs
         })
@@ -331,7 +331,7 @@ def main():
     ## -- LOAD CHECKPOINT AND PLOT DIRECTORY
 
     # create placeholder for predictions
-    pred_df = pd.DataFrame(columns=['filename', 'file_id', 'class_name', 'confidence', 'bbox'])
+    pred_df = pd.DataFrame(columns=['filename', 'file_id', 'prediction', 'confidence', 'bbox'])
 
     if args.resume_from_checkpoint is not None:
         # confirm checkpoint path exists
@@ -421,7 +421,7 @@ def main():
                 pred_df_i = pd.DataFrame({
                     'filename': image_infos[i],
                     'file_id': image_infos[i][:-4],
-                    'class_name': "Image error",
+                    'prediction': "Image error",
                     'confidence': 0,
                     'bbox': [[0, 0, 0, 0]],
                     'timestamp': "NA"
