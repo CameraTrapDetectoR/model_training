@@ -49,7 +49,7 @@ print(device)
 
 
 # Set model type: options = 'general', 'family', 'species', 'pig_only'
-model_type = 'pig_only'
+model_type = 'species'
 
 # load annotations - samples created in the R script `create_training_sample_v3`
 train_df = pd.read_csv("./labels/v3_species_train_df.csv")
@@ -154,7 +154,7 @@ if resume:
 # setup new training
 else:
     # create label dictionary
-    label2target = {l: t + 1 for t, l in enumerate(sorted(train_df[model_type].unique()))}
+    label2target = {l: t + 1 for t, l in enumerate(sorted(train_df['LabelName'].unique()))}
     # set background class
     label2target['empty'] = 0
     # reverse dictionary to read into pytorch
@@ -202,7 +202,7 @@ else:
     # set denominator if using gradient accumulation
     if use_grad:
         # set number of gradients to accumulate before updating weights
-        grad_accumulation = 8
+        grad_accumulation = 16
         # effective batch size = batch_size * grad_accumulation
         batch_size = batch_size_org // grad_accumulation
 
