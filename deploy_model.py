@@ -20,12 +20,12 @@ import cv2
 
 from datetime import datetime
 
-from utils.hyperparameters import get_anchors
-from models.backbones import load_fasterrcnn
+from fasterRCNN.utils.hyperparameters import get_anchors
+from fasterRCNN.models.backbones import load_fasterrcnn
 from tqdm import tqdm
 from torchvision.ops import nms
 
-from utils.post_process import format_evals, plot_image, normalize_bboxes, get_metadata
+from fasterRCNN.utils.post_process import format_evals, plot_image, normalize_bboxes, get_metadata
 
 import argparse
 import sys
