@@ -1,0 +1,20 @@
+name: ctd-deploy-model
+
+channels:
+  - conda-forge
+  - pytorch
+
+dependencies:
+  # support packages
+  - python>=3.9
+  - Pillow=9.4.0
+  - numpy
+  - pandas
+  - scikit-learn
+  - opencv
+  - tqdm
+  - albumentations
+
+  # model packages
+  - pytorch::pytorch>=1.12
+  - pytorch::torchvision>=0.13
