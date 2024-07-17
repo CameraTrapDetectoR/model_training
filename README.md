@@ -70,7 +70,7 @@ set PYTHONPATH=%PYTHONPATH%;\path\to\project\dir\model_training
 For Mac/Linux:    
 ```batch
 conda activate ctd-deploy-model
-export PYTHONPATH="$PYTHONPATH:$path/to/project/dir/model_training
+export PYTHONPATH=$PYTHONPATH:$path/to/project/dir/model_training
 ```
 
 ### 2. The deploy_model.py script
